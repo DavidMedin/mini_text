@@ -1,0 +1,20 @@
+[package]
+name = "manip"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+winit = "0.27.2" # windowing
+wgpu = "0.13.1" # rendering
+wgpu_glyph = "*" # text rendering
+
+# async stuff
+pollster = "*"
+
+bytemuck = {version = "1.4", features = [ "derive" ]}
+
+serde = "*"
+
+rand = "*"
