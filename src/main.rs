@@ -95,7 +95,7 @@ impl State {
             // /home/david/.local/share/fonts/JetBrainsMono-Bold.ttf
             // /home/david/.local/share/fonts/Vulf_Mono-Light_Italic_web.ttf
             // /usr/share/fonts/truetype/freefont/FreeSerif.ttf
-            let vulf = ab_glyph::FontArc::try_from_slice(include_bytes!("/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Bold.ttf")).unwrap();
+            let vulf = ab_glyph::FontArc::try_from_slice(include_bytes!("/home/david/.local/share/fonts/JetBrainsMono-Bold.ttf")).unwrap();
             let mut glyph_brush = GlyphBrushBuilder::using_font(vulf).build(&device, wgpu::TextureFormat::Bgra8UnormSrgb);
             let staging_belt = wgpu::util::StagingBelt::new(1024);
             let font_scale = 16.0;
@@ -106,7 +106,7 @@ impl State {
                 let mut file = match std::fs::File::open(path){
                     Ok(file) => file,
                     Err(e) => {
-                        todo!();// create a file.
+                        todo!();//TODO: create a file.
                     },
                 };
                 
@@ -141,6 +141,7 @@ impl State {
 
     // Read a big string, and generate the needed sections
     fn batch_read_string(glyph_brush : &GlyphBrush<()>,font_size : f32, screen_size : (u32,u32), text : &String) -> Vec<Vec<SectionGlyph>> {
+        // TODO: Custom layout that supports single-word character wrapping. Pain awaits.
         let font = &glyph_brush.fonts()[0]; // TODO: Font managing (Low priority)
         let layout = wgpu_glyph::Layout::default_single_line();
 
@@ -148,11 +149,20 @@ impl State {
         let sec_geom = SectionGeometry { screen_position: (0.0,0.0), bounds: (screen_size.0 as f32,screen_size.1 as f32) };
         let mut sec_glyphs = layout.calculate_glyphs(&[font], &sec_geom , wgpu_texts.as_slice());
 
+        let mut finished_glyphs : Vec<Vec<SectionGlyph>> = vec![];
+        
         let mut front_index = 0;
         let mut i = 0;
-        while sec_glyphs.len() != text.len() {
+        let mut acc_length = 0;
+
+        while acc_length + sec_glyphs.len() != text.len() {
+            // --------------- Archive this text. It is the right length ----------------
             //                                                               v--- because it is the right operand of '..', it is exclusive.
             wgpu_texts[i] = Text::new(&text[front_index..sec_glyphs.len()]).with_scale(font_size);
+            finished_glyphs.push( layout.calculate_glyphs(&[font], &sec_geom, &wgpu_texts[i..i+1]));
+            acc_length += wgpu_texts[i].text.len();
+            // --------------------------------------------------------------------------
+
             front_index = sec_glyphs.len();
             wgpu_texts.push( Text::new(&text[front_index..]).with_scale(font_size) );
             sec_glyphs = layout.calculate_glyphs(&[font], &sec_geom, &wgpu_texts[i+1..i+2]);
@@ -164,7 +174,10 @@ impl State {
             }
             i += 1;
         }
-        vec![]
+
+        // compute last string to glyph
+        finished_glyphs.push( layout.calculate_glyphs(&[font], &sec_geom, &[wgpu_texts.last().unwrap()]) );
+        finished_glyphs
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -320,7 +333,7 @@ pub async fn run() {
     };
 
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().with_title("sext ed").with_decorations(false).build(&event_loop).unwrap();
+    let window = WindowBuilder::new().with_title("mini text").with_decorations(false).build(&event_loop).unwrap();
 
 
     let mut state = State::new(&window,file_name).await;
