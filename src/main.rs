@@ -1,15 +1,18 @@
 mod rect;
 mod cursor;
 
+/*
+TODO: line numbers
+ */
+
 use std::{io::{BufRead, Write}};
 use cursor::Cursor;
-use wgpu_glyph::*;
 use wgpu::util::StagingBelt;
-use wgpu_glyph::{ab_glyph::{self, Font}, GlyphBrushBuilder, GlyphBrush, Section, Text, GlyphPositioner, SectionGeometry};
+use wgpu_glyph::{*,ab_glyph::{self, Font}, GlyphBrushBuilder, GlyphBrush, Section, Text, GlyphPositioner, SectionGeometry};
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
-    window::{WindowBuilder,Window}, dpi::PhysicalPosition,
+    window::{WindowBuilder,Window}, dpi::PhysicalPosition, platform::unix::x11::util::Geometry,
 };
 
 // Don't use this will textures! Probably not a problem, but textures are
@@ -33,7 +36,9 @@ pub struct State {
     rect_pipeline : rect::RectPipeline,
 
     file_name : String,
-    text : Vec<String>,
+    text : Vec< String >,
+    // text : Vec< (String,Vec<usize>) >, // List of pairs of strings, and their list of line breaks.
+    glyphs : Vec<Vec<Vec<SectionGlyph>>>, // One for lines, one for wrapped lines, one for a line.
     font_scale : f32,
 
     cursors : Vec<Cursor>,
@@ -118,6 +123,7 @@ impl State {
                 text
             };
 
+            let _ = State::batch_read_string(&glyph_brush, font_scale, (size.width,size.height), &text[0]);
 
             let rect_pipeline = rect::RectPipeline::new(&device, config.format);
 
@@ -125,12 +131,40 @@ impl State {
             let rectangles = vec![];
             // create a bunch of rectangles
 
-            let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, text, rect_pipeline, rectangles, font_scale,file_name,cursors : vec![], scroll : 0.0 };
+            let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, text, rect_pipeline, rectangles, font_scale,file_name,cursors : vec![], scroll : 0.0 , glyphs: vec![] };
 
             let cursor : cursor::Cursor = cursor::Cursor::new(&state, (0,0));
             state.cursors.push(cursor);
 
             state
+    }
+
+    // Read a big string, and generate the needed sections
+    fn batch_read_string(glyph_brush : &GlyphBrush<()>,font_size : f32, screen_size : (u32,u32), text : &String) -> Vec<Vec<SectionGlyph>> {
+        let font = &glyph_brush.fonts()[0]; // TODO: Font managing (Low priority)
+        let layout = wgpu_glyph::Layout::default_single_line();
+
+        let mut wgpu_texts = vec![ Text::new(text.as_str()).with_scale(font_size) ];
+        let sec_geom = SectionGeometry { screen_position: (0.0,0.0), bounds: (screen_size.0 as f32,screen_size.1 as f32) };
+        let mut sec_glyphs = layout.calculate_glyphs(&[font], &sec_geom , wgpu_texts.as_slice());
+
+        let mut front_index = 0;
+        let mut i = 0;
+        while sec_glyphs.len() != text.len() {
+            //                                                               v--- because it is the right operand of '..', it is exclusive.
+            wgpu_texts[i] = Text::new(&text[front_index..sec_glyphs.len()]).with_scale(font_size);
+            front_index = sec_glyphs.len();
+            wgpu_texts.push( Text::new(&text[front_index..]).with_scale(font_size) );
+            sec_glyphs = layout.calculate_glyphs(&[font], &sec_geom, &wgpu_texts[i+1..i+2]);
+
+            
+            println!("New text : ");
+            for text in &wgpu_texts {
+                println!("{}",text.text);
+            }
+            i += 1;
+        }
+        vec![]
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
