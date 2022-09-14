@@ -123,7 +123,7 @@ impl State {
                 text
             };
 
-            let _ = State::batch_read_string(&glyph_brush, font_scale, (size.width,size.height), &text[0]);
+            let line_glyphs = State::batch_read_string(&glyph_brush, font_scale, (size.width,size.height), &text[0]);
 
             let rect_pipeline = rect::RectPipeline::new(&device, config.format);
 
@@ -144,39 +144,34 @@ impl State {
         // TODO: Custom layout that supports single-word character wrapping. Pain awaits.
         let font = &glyph_brush.fonts()[0]; // TODO: Font managing (Low priority)
         let layout = wgpu_glyph::Layout::default_single_line();
-
+        
         let mut wgpu_texts = vec![ Text::new(text.as_str()).with_scale(font_size) ];
         let sec_geom = SectionGeometry { screen_position: (0.0,0.0), bounds: (screen_size.0 as f32,screen_size.1 as f32) };
         let mut sec_glyphs = layout.calculate_glyphs(&[font], &sec_geom , wgpu_texts.as_slice());
 
         let mut finished_glyphs : Vec<Vec<SectionGlyph>> = vec![];
         
-        let mut front_index = 0;
+        // let mut front_index = 0;
         let mut i = 0;
         let mut acc_length = 0;
 
         while acc_length + sec_glyphs.len() != text.len() {
             // --------------- Archive this text. It is the right length ----------------
             //                                                               v--- because it is the right operand of '..', it is exclusive.
-            wgpu_texts[i] = Text::new(&text[front_index..sec_glyphs.len()]).with_scale(font_size);
+            wgpu_texts[i] = Text::new(&text[acc_length..acc_length+sec_glyphs.len()]).with_scale(font_size);
             finished_glyphs.push( layout.calculate_glyphs(&[font], &sec_geom, &wgpu_texts[i..i+1]));
             acc_length += wgpu_texts[i].text.len();
+            // front_index = sec_glyphs.len();
             // --------------------------------------------------------------------------
 
-            front_index = sec_glyphs.len();
-            wgpu_texts.push( Text::new(&text[front_index..]).with_scale(font_size) );
+            wgpu_texts.push( Text::new(&text[acc_length..]).with_scale(font_size) );
             sec_glyphs = layout.calculate_glyphs(&[font], &sec_geom, &wgpu_texts[i+1..i+2]);
 
-            
-            println!("New text : ");
-            for text in &wgpu_texts {
-                println!("{}",text.text);
-            }
             i += 1;
         }
 
         // compute last string to glyph
-        finished_glyphs.push( layout.calculate_glyphs(&[font], &sec_geom, &[wgpu_texts.last().unwrap()]) );
+        finished_glyphs.push( layout.calculate_glyphs(&[font], &sec_geom, &wgpu_texts[wgpu_texts.len()-1..]) );
         finished_glyphs
     }
 
