@@ -2,3 +2,4 @@
 *.txt
 *.lock
 .vscode
+.idea

@@ -32,12 +32,12 @@ impl Cursor {
     fn calc_cursor_pos(&self, glyph_brush : &GlyphBrush<()>, text : &Vec<Vec<SectionGlyph>>) -> Option<(u32,u32,u32)> {
         let font = &glyph_brush.fonts()[0];
 
-        let mut text_acc = 0;
+        // let mut text_acc = 0;
+        let mut x = 0;
         let mut y = 0;
-        let mut last_x = 0;
+        let mut last_x_px = 0;
         for line in text {
-            let mut x = 0;
-            last_x = 0;
+            last_x_px = 0;
             for SectionGlyph{glyph,..} in line {
                 // Get the width of the glyph
                 let bound = font.glyph_bounds(glyph);
@@ -45,21 +45,21 @@ impl Cursor {
     
                 // This glyph is what the cursor is highlighting. Return its position.
                 if x == self.pos.0 {
-                    // TODO: glyph.scale may need to be replaced with a new argument
                     return Some( (glyph.position.x.round() as u32, (y as f32 * self.font_size) as u32,width))
                 }
                 
-                last_x = glyph.position.x.round() as u32 + width;
+                last_x_px = glyph.position.x.round() as u32 + width;
                 x += 1;
             }
 
-            text_acc += line.len();
+            // text_acc += line.len();
             y += 1;
         }
+        y-=1; // to get rid of the last y change, so the cursor can hang off the side of the line.
 
-        if text_acc == self.pos.0 {
+        if x == self.pos.0 {
             // Only runs for the cursor position right after the last character.
-            return Some( ( last_x, (y as f32 * self.font_size) as u32, 8) );
+            return Some( ( last_x_px, (y as f32 * self.font_size) as u32, 8) );
         }
         
         None
@@ -71,11 +71,16 @@ impl Cursor {
     }
 
     pub fn update_cursor(&mut self,device : &Device , glyph_brush : &GlyphBrush<()>, text : &/*All lines*/Vec< /*line break*/Vec< /*line*/Vec<SectionGlyph>>>) {
+        // get number of lines proceeding.
+        let mut y_acc = 0;
+        for i in 0..self.pos.1 { // doesn't include self.pos.1
+            y_acc += text[i].len() as u32;
+        }
         // update cursor rectangle position.        
         let (x,y,w) = self.calc_cursor_pos(glyph_brush, &text[self.pos.1])
             .expect("You are bad at programming.");
                     // TODO: Add scrolling. This place will be affected a lot.
-        self.rect.set_rect(device,x,(self.pos.1 as f32 * self.font_size) as u32, w,self.font_size as u32);
+        self.rect.set_rect(device,x,y + y_acc * (self.font_size as u32), w,self.font_size as u32);
     }
 
     // Does not update the cursor's rectangle.
@@ -178,6 +183,7 @@ impl Cursor {
                 // TODO: be smarter, don't totally recalcuate everything all the time.
                 let line_glyphs = State::batch_read_string(glyph_brush, self.font_size, self.screen_size, &text[self.pos.1].0);
                 text[self.pos.1].1 = State::wrap_line(&line_glyphs,&text[self.pos.1].0); // update line break indices.
+                glyphs[self.pos.1] = line_glyphs;
                 
                 self.pos.0 += 1;
             }, // unwrap should be safe.

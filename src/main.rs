@@ -149,10 +149,11 @@ impl State {
     fn wrap_line( glyphs : &Vec<Vec<SectionGlyph>>, text : &String) -> Vec<usize> {
         // a list of pairs of a string and its breaks. Each break is a seperator of lines from word wrap.
         let mut acc = 0;
-        let breaks : Vec<usize> = glyphs.iter().map(|x| {
+        let mut breaks : Vec<usize> = glyphs.iter().map(|x| {
             acc += x.len();
             acc
         }).collect();
+        breaks.insert(0,0); // makes life easier
         breaks
     }
     
@@ -302,21 +303,27 @@ impl State {
 
         // ------------- Draw text ------------------
         // queue text draw
+        let mut y_acc = 0; // y position in lines.
+        let offset = self.scroll * self.font_scale;
         for i in 0..self.text.len() {
-            let i_f = i as f32;
-
-            let offset = self.scroll * self.font_scale;
-            let pos = (0.0, i_f * self.font_scale + offset);
             
-            let text_color = rgb(220, 215, 201);
-            self.glyph_brush.queue(Section {
-                screen_position: pos,
-                bounds: (self.size.width as f32, self.size.height as f32),
-                text: vec![Text::new(self.text[i].0.as_str()).with_color([text_color.0,text_color.1,text_color.2,1.1]).with_scale(self.font_scale)],
-                layout: wgpu_glyph::Layout::default_single_line(),
+            for wrap in 0..&self.text[i].1.len()-1 {
+                let pos = (0.0, (y_acc as f32) * self.font_scale + offset);
                 
-                // ..Section::default() // line ending and v-h align
-            });
+                let text_color = rgb(220, 215, 201);
+                let text = Text::new(&self.text[i].0[self.text[i].1[wrap] .. self.text[i].1[wrap+1]]).with_color([text_color.0,text_color.1,text_color.2,1.1]).with_scale(self.font_scale);
+                self.glyph_brush.queue(Section {
+                    screen_position: pos,
+                    bounds: (self.size.width as f32, self.size.height as f32),
+                    text: vec![text],
+                    layout: wgpu_glyph::Layout::default_single_line(),
+                    
+                    // ..Section::default() // line ending and v-h align
+                });
+
+                y_acc += 1;
+            }
+
         }
 
        
