@@ -8,7 +8,7 @@ TODO: line numbers
 use std::{io::{BufRead, Write}};
 use cursor::Cursor;
 use wgpu::util::StagingBelt;
-use wgpu_glyph::{*,ab_glyph::{self, Font}, GlyphBrushBuilder, GlyphBrush, Section, Text, GlyphPositioner, SectionGeometry};
+use wgpu_glyph::{*,ab_glyph::{self, Font, FontArc}, GlyphBrushBuilder, GlyphBrush, Section, Text, GlyphPositioner, SectionGeometry};
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -36,8 +36,8 @@ pub struct State {
     rect_pipeline : rect::RectPipeline,
 
     file_name : String,
-    text : Vec< String >,
-    // text : Vec< (String,Vec<usize>) >, // List of pairs of strings, and their list of line breaks.
+    // text : Vec< String >,
+    text : Vec< (String,Vec<usize>) >, // List of pairs of strings, and their list of line breaks.
     glyphs : Vec<Vec<Vec<SectionGlyph>>>, // One for lines, one for wrapped lines, one for a line.
     font_scale : f32,
 
@@ -95,13 +95,13 @@ impl State {
             // /home/david/.local/share/fonts/JetBrainsMono-Bold.ttf
             // /home/david/.local/share/fonts/Vulf_Mono-Light_Italic_web.ttf
             // /usr/share/fonts/truetype/freefont/FreeSerif.ttf
-            let vulf = ab_glyph::FontArc::try_from_slice(include_bytes!("/home/david/.local/share/fonts/JetBrainsMono-Bold.ttf")).unwrap();
+            let vulf = ab_glyph::FontArc::try_from_slice(include_bytes!("/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Bold.ttf")).unwrap();
             let mut glyph_brush = GlyphBrushBuilder::using_font(vulf).build(&device, wgpu::TextureFormat::Bgra8UnormSrgb);
             let staging_belt = wgpu::util::StagingBelt::new(1024);
             let font_scale = 16.0;
 
 
-            let mut text : Vec<String> = {// open the file
+            let mut lines : Vec<String> = {// open the file
                 let path = std::path::Path::new(&file_name);
                 let mut file = match std::fs::File::open(path){
                     Ok(file) => file,
@@ -123,7 +123,14 @@ impl State {
                 text
             };
 
-            let line_glyphs = State::batch_read_string(&glyph_brush, font_scale, (size.width,size.height), &text[0]);
+            let mut text : Vec< (String, Vec<usize>) > = vec![];
+            let mut glyphs : Vec<Vec<Vec<SectionGlyph>>> = vec![];
+            for line in lines {
+                let line_glyphs = State::batch_read_string(&glyph_brush, font_scale, (size.width,size.height), &line);
+                let breaks = State::wrap_line(&line_glyphs, &line);
+                glyphs.push(line_glyphs);
+                text.push( (line,breaks) );
+            }
 
             let rect_pipeline = rect::RectPipeline::new(&device, config.format);
 
@@ -131,7 +138,7 @@ impl State {
             let rectangles = vec![];
             // create a bunch of rectangles
 
-            let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, text, rect_pipeline, rectangles, font_scale,file_name,cursors : vec![], scroll : 0.0 , glyphs: vec![] };
+            let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, text, rect_pipeline, rectangles, font_scale,file_name,cursors : vec![], scroll : 0.0 , glyphs};
 
             let cursor : cursor::Cursor = cursor::Cursor::new(&state, (0,0));
             state.cursors.push(cursor);
@@ -139,6 +146,16 @@ impl State {
             state
     }
 
+    fn wrap_line( glyphs : &Vec<Vec<SectionGlyph>>, text : &String) -> Vec<usize> {
+        // a list of pairs of a string and its breaks. Each break is a seperator of lines from word wrap.
+        let mut acc = 0;
+        let breaks : Vec<usize> = glyphs.iter().map(|x| {
+            acc += x.len();
+            acc
+        }).collect();
+        breaks
+    }
+    
     // Read a big string, and generate the needed sections
     fn batch_read_string(glyph_brush : &GlyphBrush<()>,font_size : f32, screen_size : (u32,u32), text : &String) -> Vec<Vec<SectionGlyph>> {
         // TODO: Custom layout that supports single-word character wrapping. Pain awaits.
@@ -218,7 +235,7 @@ impl State {
         let len = self.text.len();
         for line in &self.text {
             // TODO: handle these
-            file.write(line.as_bytes());
+            file.write(line.0.as_bytes());
             i+=1;
             if i != len {
                 file.write(&['\n' as u8]);
@@ -236,16 +253,17 @@ impl State {
     fn move_cursor(&mut self, direction : CursorMovement) {
         use CursorMovement::*;
         for cursor in &mut self.cursors {
-            cursor.move_cursor(&self.text, direction);
-            cursor.update_cursor(&self.device, &self.glyph_brush, &self.text);
+            let refs : Vec<&String> = self.text.iter().map(|x| &x.0).collect();
+            cursor.move_cursor(&refs, direction);
+            cursor.update_cursor(&self.device, &self.glyph_brush, &self.glyphs);
         }
         
     }
     fn insert_cursor(&mut self, character : char) {
         // the cursor is an index. backspace removes the character before the cursor.
         for cursor in &mut self.cursors {
-            cursor.insert_text(&mut self.text, character);
-            cursor.update_cursor(&self.device, &self.glyph_brush, &self.text);
+            cursor.insert_text(&self.glyph_brush,&mut self.text, &mut self.glyphs, character);
+            cursor.update_cursor(&self.device, &self.glyph_brush, &self.glyphs);
         }
     }
 
@@ -294,7 +312,7 @@ impl State {
             self.glyph_brush.queue(Section {
                 screen_position: pos,
                 bounds: (self.size.width as f32, self.size.height as f32),
-                text: vec![Text::new(self.text[i].as_str()).with_color([text_color.0,text_color.1,text_color.2,1.1]).with_scale(self.font_scale)],
+                text: vec![Text::new(self.text[i].0.as_str()).with_color([text_color.0,text_color.1,text_color.2,1.1]).with_scale(self.font_scale)],
                 layout: wgpu_glyph::Layout::default_single_line(),
                 
                 // ..Section::default() // line ending and v-h align
