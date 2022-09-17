@@ -160,20 +160,27 @@ impl Cursor {
                 self.pos.0 = 0;
             },
             '\u{8}' => { // backspace
-                // TODO: make this work with word wrap.
-                // if self.pos.0 > 0 {
-                //     text[self.pos.1].remove(if self.pos.0 == 0 {self.pos.0} else {self.pos.0-1} );
-                //     self.pos.0 -= 1;
-                // } else if self.pos.1 > 0 {
-                //     // Copy the remaining text from this line and copy to the last line.
-                //     let string : String = text[self.pos.1].drain(..).collect();
-                //     let len = text[self.pos.1-1].len();
-                //     text[self.pos.1-1].insert_str( len, string.as_str());
-                //     self.pos.0 = len;
-
-                //     text.remove(self.pos.1);
-                //     self.pos.1 -= 1;
-                // }
+                let mut update_line = self.pos.1;
+                if self.pos.0 > 0 {
+                    text[self.pos.1].0.remove(if self.pos.0 == 0 {self.pos.0} else {self.pos.0-1} );
+                    self.pos.0 -= 1;
+                } else if self.pos.1 > 0 {
+                    // Copy the remaining text from this line and copy to the last line.
+                    let (string,_) = text.remove(self.pos.1);
+                    // let string : String = text[self.pos.1].drain(..).collect();
+                    let len = text[self.pos.1-1].0.len();
+                    text[self.pos.1-1].0.insert_str( len, string.as_str());
+                    self.pos.0 = len;
+                    
+                    // text.remove(self.pos.1);
+                    self.pos.1 -= 1;
+                    
+                    update_line = self.pos.1-1;
+                }
+                // update
+                let line_glyphs = State::batch_read_string(glyph_brush, self.font_size, self.screen_size, &text[update_line].0);
+                text[update_line].1 = State::wrap_line(&line_glyphs,&text[update_line].0); // update line break indices.
+                glyphs[update_line] = line_glyphs;
             }
             '\t' => {
 

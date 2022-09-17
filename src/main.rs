@@ -95,7 +95,7 @@ impl State {
             // /home/david/.local/share/fonts/JetBrainsMono-Bold.ttf
             // /home/david/.local/share/fonts/Vulf_Mono-Light_Italic_web.ttf
             // /usr/share/fonts/truetype/freefont/FreeSerif.ttf
-            let vulf = ab_glyph::FontArc::try_from_slice(include_bytes!("/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Bold.ttf")).unwrap();
+            let vulf = ab_glyph::FontArc::try_from_slice(include_bytes!("../Monocraft.otf")).unwrap();
             let mut glyph_brush = GlyphBrushBuilder::using_font(vulf).build(&device, wgpu::TextureFormat::Bgra8UnormSrgb);
             let staging_belt = wgpu::util::StagingBelt::new(1024);
             let font_scale = 16.0;
@@ -176,21 +176,56 @@ impl State {
         while acc_length + sec_glyphs.len() != text.len() {
             // --------------- Archive this text. It is the right length ----------------
             //                                                               v--- because it is the right operand of '..', it is exclusive.
-            wgpu_texts[i] = Text::new(&text[acc_length..acc_length+sec_glyphs.len()]).with_scale(font_size);
-            finished_glyphs.push( layout.calculate_glyphs(&[font], &sec_geom, &wgpu_texts[i..i+1]));
+            let slice = acc_length..acc_length+sec_glyphs.len();
+            wgpu_texts[i] = Text::new(&text[slice]).with_scale(font_size);
+            // finished_glyphs.push( sec_glyphs);
+            
+
+            let new_glyphs = layout.calculate_glyphs(&[font], &sec_geom, &wgpu_texts[i..i+1]);
+            for glyph in &new_glyphs {
+                let mut val : char = 'a';
+                for v in 0 as u8..255 as u8 {
+                    if font.glyph_id(v as char) == glyph.glyph.id {
+                        val = v as char;
+                        break;
+                    }
+                }
+                print!("{}", val);
+            }
+            println!("");
+
+            
+            finished_glyphs.push(new_glyphs);
             acc_length += wgpu_texts[i].text.len();
             // front_index = sec_glyphs.len();
             // --------------------------------------------------------------------------
 
-            wgpu_texts.push( Text::new(&text[acc_length..]).with_scale(font_size) );
-            sec_glyphs = layout.calculate_glyphs(&[font], &sec_geom, &wgpu_texts[i+1..i+2]);
+            let pot_text = Text::new(&text[acc_length..]).with_scale(font_size);
+            // let sec = &wgpu_texts[i+1..i+2];
+            sec_glyphs = layout.calculate_glyphs(&[font], &sec_geom, &[pot_text]);
+            wgpu_texts.push( pot_text );
+            for glyph in &sec_glyphs {
+                let mut val : char = 'a';
+                for v in 0 as u8..255 as u8 {
+                    if font.glyph_id(v as char) == glyph.glyph.id {
+                        val = v as char;
+                        break;
+                    }
+                }
+                print!("{}", val);
+            }
+            println!("");
 
             i += 1;
         }
 
         // compute last string to glyph
-        finished_glyphs.push( layout.calculate_glyphs(&[font], &sec_geom, &wgpu_texts[wgpu_texts.len()-1..]) );
-        finished_glyphs
+        // finished_glyphs.push( layout.calculate_glyphs(&[font], &sec_geom, &wgpu_texts[wgpu_texts.len()-1..]) );
+        finished_glyphs.push(sec_glyphs);
+        // for sec in &finished_glyphs {
+        //     println!("{}",sec.len());
+        // }
+        return finished_glyphs;
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
