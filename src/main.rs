@@ -44,7 +44,7 @@ pub struct State {
     cursors : Vec<Cursor>,
     rectangles: Vec<rect::Rect>,
 
-    scroll : i64
+    scroll : f64
 }
 
 #[derive(Clone,Copy)]
@@ -134,7 +134,7 @@ impl State {
             let rectangles = vec![];
             // create a bunch of rectangles
 
-            let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, text, rect_pipeline, rectangles, font_scale,file_name,cursors : vec![], scroll : 0 , glyphs};
+            let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, text, rect_pipeline, rectangles, font_scale,file_name,cursors : vec![], scroll : 0.0 , glyphs};
 
             let cursor : cursor::Cursor = cursor::Cursor::new(&state, (0,0));
             state.cursors.push(cursor);
@@ -253,7 +253,7 @@ impl State {
         for cursor in &mut self.cursors {
             let refs : Vec<&String> = self.text.iter().map(|x| &x.0).collect();
             cursor.move_cursor(&refs, direction);
-            cursor.update_cursor(&self.device, &self.glyph_brush, self.scroll * self.font_scale as i64, &self.glyphs);
+            cursor.update_cursor(&self.device, &self.glyph_brush, self.scroll as i64 * self.font_scale as i64, &self.glyphs);
         }
         
     }
@@ -261,7 +261,7 @@ impl State {
         // the cursor is an index. backspace removes the character before the cursor.
         for cursor in &mut self.cursors {
             cursor.insert_text(&self.glyph_brush,&mut self.text, &mut self.glyphs, character);
-            cursor.update_cursor(&self.device, &self.glyph_brush, self.scroll * self.font_scale as i64, &self.glyphs);
+            cursor.update_cursor(&self.device, &self.glyph_brush, self.scroll as i64  * self.font_scale as i64, &self.glyphs);
         }
     }
 
@@ -301,7 +301,7 @@ impl State {
         // ------------- Draw text ------------------
         // queue text draw
         let mut y_acc = 0; // y position in lines.
-        let offset = self.scroll * self.font_scale as i64;
+        let offset = self.scroll as i64 * self.font_scale as i64;
         for i in 0..self.text.len() {
             
             for wrap in 0..&self.text[i].1.len()-1 {
@@ -452,17 +452,20 @@ pub async fn run() {
                     match delta {
                         MouseScrollDelta::LineDelta(x, y) => {
                             // mouse scroll wheel scrolling
-                            state.scroll += *y as i64;
+                            state.scroll += *y as f64;
                             for cursor in &mut state.cursors {
                                 // TODO: Remove offset from the Cursor struct.
                                 // cursor.rect.set_offset(&state.device, (0,(state.scroll as f32 * state.font_scale) as i64));
-                                cursor.update_cursor(&state.device,&state.glyph_brush, state.scroll * state.font_scale as i64, &state.glyphs);
+                                cursor.update_cursor(&state.device,&state.glyph_brush, state.scroll as i64 * state.font_scale as i64, &state.glyphs);
                             }
                             println!("Scrolling lines ({},{})",x,y);
                         },
                         MouseScrollDelta::PixelDelta( PhysicalPosition{x,y}) => {
                             // mouse pad scrolling
-                            state.scroll += *y as i64;
+                            state.scroll += *y as f64;
+                            for cursor in &mut state.cursors{
+                                cursor.update_cursor(&state.device,&state.glyph_brush, state.scroll as i64 * state.font_scale as i64, &state.glyphs);
+                            }
                             println!("Scrolling pixels ({},{})",x,y);
                         },
                     }

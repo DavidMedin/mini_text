@@ -25,7 +25,7 @@ impl Cursor {
 
         // update the new cursor
         // cursor.rect.set_pos(&state.device, x, y) = ( as usize, cursor_pos.1 as usize);
-        cursor.update_cursor(&state.device, &state.glyph_brush,state.scroll * state.font_scale as i64, &state.glyphs);
+        cursor.update_cursor(&state.device, &state.glyph_brush,state.scroll as i64 * state.font_scale as i64, &state.glyphs);
         cursor
     }
 
