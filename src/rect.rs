@@ -88,7 +88,7 @@ impl Vertex {
 }
 
 // x,y,w,h (screen space) -> x,y,w,h (world space)
-fn world_space(screen_size : (u32,u32),x:u32,y:u32,width : u32,height:u32) -> (f32,f32,f32,f32) {
+fn world_space(screen_size : (u32,u32),x:i64,y:i64,width : u32,height:u32) -> (f32,f32,f32,f32) {
     (
         x as f32 /(screen_size.0 as f32 / 2.0) - 1.0,
         -1.0 * (y as f32/(screen_size.1 as f32 / 2.0) - 1.0),
@@ -96,10 +96,10 @@ fn world_space(screen_size : (u32,u32),x:u32,y:u32,width : u32,height:u32) -> (f
         height as f32/screen_size.1 as f32 * 2.0
     )
 }
-fn screen_space(screen_size: (u32,u32),x:f32,y:f32,width:f32,height:f32) -> (u32,u32,u32,u32) {
+fn screen_space(screen_size: (u32,u32),x:f32,y:f32,width:f32,height:f32) -> (i64,i64,u32,u32) {
     (
-        ( (x+1.0) * (screen_size.0 as f32 / 2.0) ) as u32,
-        ( ( (-y+1.0) * (screen_size.1 as f32 / 2.0) ) as u32),
+        ( (x+1.0) * (screen_size.0 as f32 / 2.0) ) as i64,
+        ( ( (-y+1.0) * (screen_size.1 as f32 / 2.0) ) as i64),
         (width * screen_size.0 as f32 / 2.0) as u32,
         (height * screen_size.1 as f32 / 2.0) as u32
     )
@@ -110,9 +110,9 @@ pub struct Rect {
     size :(f32,f32),
     pos : (f32,f32),
     
-    offset : (u32,u32),
+    offset : (i64,i64), // can be negative offset
     px_size: (u32,u32),
-    px_pos: (u32,u32),
+    px_pos: (i64,i64), // can be offscreen
     
     color : (f32,f32,f32),
     screen_size : (u32,u32),
@@ -121,7 +121,7 @@ pub struct Rect {
 
 }
 impl Rect {
-    pub fn new(device : &wgpu::Device, screen_size : (u32,u32), size : (u32,u32),pos : (u32,u32), offset : (u32,u32), color:(f32,f32,f32)) -> Self {
+    pub fn new(device : &wgpu::Device, screen_size : (u32,u32), size : (u32,u32),pos : (i64,i64), offset : (i64,i64), color:(f32,f32,f32)) -> Self {
         let px_pos = pos;
         let px_size = size;
         let (x,y,width,height) = world_space(size,pos.0,pos.1,size.0,size.1);
@@ -151,7 +151,7 @@ impl Rect {
         render_pass.draw(0..6,0..1);
     }
 
-    pub fn get_pos(&self)->(u32,u32) {
+    pub fn get_pos(&self)->(i64,i64) {
         let (x,y,_,_) = screen_space(self.screen_size, self.pos.0, self.pos.1, self.size.0, self.size.1);
         (x,y)
     }
@@ -182,7 +182,7 @@ impl Rect {
         });
     }
 
-    pub fn set_rect(&mut self,device : & wgpu::Device, x:u32,y:u32,w:u32,h:u32) {
+    pub fn set_rect(&mut self,device : & wgpu::Device, x:i64,y:i64,w:u32,h:u32) {
         self.px_pos = (x,y);
         self.px_size = (w,h);
         let (x,y,w,h) = world_space(self.screen_size, x + self.offset.0, y + self.offset.1, w, h);
@@ -208,7 +208,7 @@ impl Rect {
         });
     }
 
-    pub fn set_pos(&mut self,device : & wgpu::Device, pos : (u32,u32), offset : (u32,u32)) {
+    pub fn set_pos(&mut self,device : & wgpu::Device, pos : (i64,i64), offset : (i64,i64)) {
         self.px_pos = pos;
         let (x,y,w,h) = world_space(self.screen_size, pos.0 + offset.0,pos.1 + offset.1, self.px_size.0,self.px_size.1);
         self.pos = (x,y);
@@ -233,7 +233,7 @@ impl Rect {
         });
     }
 
-    pub fn set_offset(&mut self, device : &wgpu::Device, offset : (u32,u32)) {
+    pub fn set_offset(&mut self, device : &wgpu::Device, offset : (i64,i64)) {
         self.offset = offset;
         self.set_pos(device, (self.px_pos.0,self.px_pos.1), offset);
     }

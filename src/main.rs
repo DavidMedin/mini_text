@@ -44,7 +44,7 @@ pub struct State {
     cursors : Vec<Cursor>,
     rectangles: Vec<rect::Rect>,
 
-    scroll : f32
+    scroll : i64
 }
 
 #[derive(Clone,Copy)]
@@ -91,10 +91,6 @@ impl State {
             surface.configure(&device, &config);
 
             // TODO: Search paths for user specified font. Or use user's specified path.
-            // /usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Bold.ttf
-            // /home/david/.local/share/fonts/JetBrainsMono-Bold.ttf
-            // /home/david/.local/share/fonts/Vulf_Mono-Light_Italic_web.ttf
-            // /usr/share/fonts/truetype/freefont/FreeSerif.ttf
             let vulf = ab_glyph::FontArc::try_from_slice(include_bytes!("../Monocraft.otf")).unwrap();
             let mut glyph_brush = GlyphBrushBuilder::using_font(vulf).build(&device, wgpu::TextureFormat::Bgra8UnormSrgb);
             let staging_belt = wgpu::util::StagingBelt::new(1024);
@@ -138,7 +134,7 @@ impl State {
             let rectangles = vec![];
             // create a bunch of rectangles
 
-            let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, text, rect_pipeline, rectangles, font_scale,file_name,cursors : vec![], scroll : 0.0 , glyphs};
+            let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, text, rect_pipeline, rectangles, font_scale,file_name,cursors : vec![], scroll : 0 , glyphs};
 
             let cursor : cursor::Cursor = cursor::Cursor::new(&state, (0,0));
             state.cursors.push(cursor);
@@ -164,12 +160,12 @@ impl State {
         let layout = wgpu_glyph::Layout::default_single_line();
         
         let mut wgpu_texts = vec![ Text::new(text.as_str()).with_scale(font_size) ];
-        let sec_geom = SectionGeometry { screen_position: (0.0,0.0), bounds: (screen_size.0 as f32,screen_size.1 as f32) };
+                                                                                            // -8 to give room for the cursor.
+        let sec_geom = SectionGeometry { screen_position: (0.0,0.0), bounds: (screen_size.0 as f32 - 8.0,screen_size.1 as f32) };
         let mut sec_glyphs = layout.calculate_glyphs(&[font], &sec_geom , wgpu_texts.as_slice());
 
         let mut finished_glyphs : Vec<Vec<SectionGlyph>> = vec![];
         
-        // let mut front_index = 0;
         let mut i = 0;
         let mut acc_length = 0;
 
@@ -178,57 +174,23 @@ impl State {
             //                                                               v--- because it is the right operand of '..', it is exclusive.
             let slice = acc_length..acc_length+sec_glyphs.len();
             wgpu_texts[i] = Text::new(&text[slice]).with_scale(font_size);
-            // finished_glyphs.push( sec_glyphs);
-            
-
-            let new_glyphs = layout.calculate_glyphs(&[font], &sec_geom, &wgpu_texts[i..i+1]);
-            for glyph in &new_glyphs {
-                let mut val : char = 'a';
-                for v in 0 as u8..255 as u8 {
-                    if font.glyph_id(v as char) == glyph.glyph.id {
-                        val = v as char;
-                        break;
-                    }
-                }
-                print!("{}", val);
-            }
-            println!("");
-
-            
-            finished_glyphs.push(new_glyphs);
+            finished_glyphs.push( sec_glyphs);
             acc_length += wgpu_texts[i].text.len();
-            // front_index = sec_glyphs.len();
-            // --------------------------------------------------------------------------
 
-            let pot_text = Text::new(&text[acc_length..]).with_scale(font_size);
-            // let sec = &wgpu_texts[i+1..i+2];
-            sec_glyphs = layout.calculate_glyphs(&[font], &sec_geom, &[pot_text]);
-            wgpu_texts.push( pot_text );
-            for glyph in &sec_glyphs {
-                let mut val : char = 'a';
-                for v in 0 as u8..255 as u8 {
-                    if font.glyph_id(v as char) == glyph.glyph.id {
-                        val = v as char;
-                        break;
-                    }
-                }
-                print!("{}", val);
-            }
-            println!("");
+            let potential_text = Text::new(&text[acc_length..]).with_scale(font_size);
+            sec_glyphs = layout.calculate_glyphs(&[font], &sec_geom, &[potential_text]);
+            wgpu_texts.push( potential_text );
 
             i += 1;
         }
 
         // compute last string to glyph
-        // finished_glyphs.push( layout.calculate_glyphs(&[font], &sec_geom, &wgpu_texts[wgpu_texts.len()-1..]) );
         finished_glyphs.push(sec_glyphs);
-        // for sec in &finished_glyphs {
-        //     println!("{}",sec.len());
-        // }
         return finished_glyphs;
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        // TODO: recaulculate all text positions and wrap lines.
 		if new_size.width > 0 && new_size.height > 0 {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
@@ -291,7 +253,7 @@ impl State {
         for cursor in &mut self.cursors {
             let refs : Vec<&String> = self.text.iter().map(|x| &x.0).collect();
             cursor.move_cursor(&refs, direction);
-            cursor.update_cursor(&self.device, &self.glyph_brush, &self.glyphs);
+            cursor.update_cursor(&self.device, &self.glyph_brush, self.scroll * self.font_scale as i64, &self.glyphs);
         }
         
     }
@@ -299,7 +261,7 @@ impl State {
         // the cursor is an index. backspace removes the character before the cursor.
         for cursor in &mut self.cursors {
             cursor.insert_text(&self.glyph_brush,&mut self.text, &mut self.glyphs, character);
-            cursor.update_cursor(&self.device, &self.glyph_brush, &self.glyphs);
+            cursor.update_cursor(&self.device, &self.glyph_brush, self.scroll * self.font_scale as i64, &self.glyphs);
         }
     }
 
@@ -339,11 +301,11 @@ impl State {
         // ------------- Draw text ------------------
         // queue text draw
         let mut y_acc = 0; // y position in lines.
-        let offset = self.scroll * self.font_scale;
+        let offset = self.scroll * self.font_scale as i64;
         for i in 0..self.text.len() {
             
             for wrap in 0..&self.text[i].1.len()-1 {
-                let pos = (0.0, (y_acc as f32) * self.font_scale + offset);
+                let pos = (0.0, (y_acc * self.font_scale as i64 - offset) as f32);
                 
                 let text_color = rgb(220, 215, 201);
                 let text = Text::new(&self.text[i].0[self.text[i].1[wrap] .. self.text[i].1[wrap+1]]).with_color([text_color.0,text_color.1,text_color.2,1.1]).with_scale(self.font_scale);
@@ -490,15 +452,17 @@ pub async fn run() {
                     match delta {
                         MouseScrollDelta::LineDelta(x, y) => {
                             // mouse scroll wheel scrolling
-                            state.scroll += *y;
+                            state.scroll += *y as i64;
                             for cursor in &mut state.cursors {
-                                cursor.rect.set_offset(&state.device, (0,(state.scroll * state.font_scale) as u32));
+                                // TODO: Remove offset from the Cursor struct.
+                                // cursor.rect.set_offset(&state.device, (0,(state.scroll as f32 * state.font_scale) as i64));
+                                cursor.update_cursor(&state.device,&state.glyph_brush, state.scroll * state.font_scale as i64, &state.glyphs);
                             }
                             println!("Scrolling lines ({},{})",x,y);
                         },
                         MouseScrollDelta::PixelDelta( PhysicalPosition{x,y}) => {
                             // mouse pad scrolling
-                            state.scroll += *y as f32;
+                            state.scroll += *y as i64;
                             println!("Scrolling pixels ({},{})",x,y);
                         },
                     }
