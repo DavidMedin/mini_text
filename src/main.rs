@@ -30,6 +30,17 @@ pub struct Line {
     breaks : Vec<usize>,
     glyphs : Vec<Vec<SectionGlyph>>
 }
+impl Line {
+    pub fn new(text : String, glyph_brush : &GlyphBrush<()>, font_scale : f32, screen_size : (u32,u32) ) -> Self {
+        let glyphs = State::batch_read_string(&glyph_brush, font_scale, screen_size, &text);
+        let breaks = State::wrap_line(&glyphs, &text);
+        Line { text, breaks, glyphs}
+    }
+    pub fn calculate(&mut self, glyph_brush : &GlyphBrush<()>, font_scale : f32, screen_size : (u32,u32) ) {
+        self.glyphs = State::batch_read_string(&glyph_brush, font_scale, screen_size, &self.text);
+        self.breaks = State::wrap_line(&self.glyphs, &self.text);
+    }
+}
 
 // The graphical state of the window.
 pub struct State {
@@ -106,7 +117,7 @@ impl State {
             let font_scale = 16.0;
 
 
-            let mut lines : Vec<String> = {// open the file
+            let mut file_lines : Vec<String> = {// open the file
                 let path = std::path::Path::new(&file_name);
                 let mut file = match std::fs::File::open(path){
                     Ok(file) => file,
@@ -128,16 +139,10 @@ impl State {
                 text
             };
 
-            let mut text : Vec< (String, Vec<usize>) > = vec![];
-            let mut glyphs : Vec<Vec<Vec<SectionGlyph>>> = vec![];
-            for line in lines {
-                let line_glyphs = State::batch_read_string(&glyph_brush, font_scale, (size.width,size.height), &line);
-                let breaks = State::wrap_line(&line_glyphs, &line);
-                glyphs.push(line_glyphs);
-                text.push( (line,breaks) );
+            let mut lines : Vec<Line> = vec![];
+            for line in file_lines {
+                lines.push( Line::new(line,&glyph_brush, font_scale, (size.width,size.height)) );
             }
-            // zip text and glyphs into a vec of lines.
-            let lines : Vec<Line> = text.into_iter().zip(glyphs.into_iter()).map(|(t,g)| Line{ text: t.0, breaks: t.1, glyphs: g }).collect();
 
             let rect_pipeline = rect::RectPipeline::new(&device, config.format);
 
@@ -201,7 +206,6 @@ impl State {
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        // TODO: recaulculate all text positions and wrap lines.
 		if new_size.width > 0 && new_size.height > 0 {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
@@ -209,6 +213,11 @@ impl State {
 
             // reconfigure the device.
             self.surface.configure(&self.device, &self.config);
+
+            // recalculate word wrap
+            for line in &mut self.lines {
+                line.calculate(&self.glyph_brush, self.font_scale, (self.size.width,self.size.height));
+            }
 
             // recalculate rectangles
             // self.cursor.update_rect(&self.device,(new_size.width,new_size.height));
@@ -465,7 +474,7 @@ pub async fn run() {
                     match delta {
                         MouseScrollDelta::LineDelta(x, y) => {
                             // mouse scroll wheel scrolling
-                            state.scroll += *y as f64;
+                            state.scroll -= *y as f64;
                             for cursor in &mut state.cursors {
                                 // TODO: Remove offset from the Cursor struct.
                                 // cursor.rect.set_offset(&state.device, (0,(state.scroll as f32 * state.font_scale) as i64));
@@ -475,7 +484,7 @@ pub async fn run() {
                         },
                         MouseScrollDelta::PixelDelta( PhysicalPosition{x,y}) => {
                             // mouse pad scrolling
-                            state.scroll += *y as f64;
+                            state.scroll -= *y as f64;
                             for cursor in &mut state.cursors{
                                 cursor.update_cursor(&state.device,&state.glyph_brush, state.scroll as i64 * state.font_scale as i64, &state.lines);
                             }
