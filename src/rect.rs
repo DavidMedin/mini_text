@@ -111,7 +111,7 @@ pub struct Rect {
     pos : (f32,f32),
     
     offset : (i64,i64), // can be negative offset
-    px_size: (u32,u32),
+    pub px_size: (u32,u32),
     px_pos: (i64,i64), // can be offscreen
     
     color : (f32,f32,f32),
@@ -124,7 +124,7 @@ impl Rect {
     pub fn new(device : &wgpu::Device, screen_size : (u32,u32), size : (u32,u32),pos : (i64,i64), offset : (i64,i64), color:(f32,f32,f32)) -> Self {
         let px_pos = pos;
         let px_size = size;
-        let (x,y,width,height) = world_space(size,pos.0,pos.1,size.0,size.1);
+        let (x,y,width,height) = world_space(screen_size,pos.0,pos.1,size.0,size.1);
 
         let vertices : &[Vertex;6] = &[
             Vertex { position: [x,y], color: [color.0,color.1,color.2] },

@@ -4,11 +4,15 @@ mod cursor;
 /*
 TODO: line numbers
 TODO: handle empty files
+TODO: Status line (saved ... file name ... [x] button)
+TODO: draw play area and margin separetly, and blit together
+TODO: fun timing and color things. like a fading cursor.
+TODO: Alt - drag for windows (shift for window resize)
  */
 
 use std::{io::{BufRead, Write}};
 use cursor::Cursor;
-use wgpu::util::StagingBelt;
+use wgpu::{util::StagingBelt, Device};
 use wgpu_glyph::{*,ab_glyph::{self, Font, FontArc}, GlyphBrushBuilder, GlyphBrush, Section, Text, GlyphPositioner, SectionGeometry};
 use winit::{
     event::*,
@@ -42,6 +46,20 @@ impl Line {
     }
 }
 
+struct TopMargin {
+    rect : rect::Rect,
+    left_icon : rect::Rect,
+    file_name : String,
+}
+impl TopMargin {
+    pub fn new(device : &Device, screen_size : (u32,u32), file_name :String) -> Self {
+        let margin_height = 20;
+        let margin_rect = rect::Rect::new(device,screen_size,(screen_size.0,margin_height), (0,0), (0,0), rgb(120, 149, 178));
+        let left_icon = rect::Rect::new(device, screen_size,(10,10), (2,2), (0,0), rgb(255, 148, 148));
+        TopMargin { rect: margin_rect, left_icon, file_name: file_name }
+    }
+}
+
 // The graphical state of the window.
 pub struct State {
     surface : wgpu::Surface,
@@ -55,14 +73,13 @@ pub struct State {
     rect_pipeline : rect::RectPipeline,
 
     file_name : String,
-    // text : Vec< String >,
-    // text : Vec< (String,Vec<usize>) >, // List of pairs of strings, and their list of line breaks.
-    // glyphs : Vec<Vec<Vec<SectionGlyph>>>, // One for lines, one for wrapped lines, one for a line.
     lines : Vec<Line>,
     font_scale : f32,
 
     cursors : Vec<Cursor>,
     rectangles: Vec<rect::Rect>,
+
+    top_margin : TopMargin,
 
     scroll : f64
 }
@@ -111,7 +128,9 @@ impl State {
             surface.configure(&device, &config);
 
             // TODO: Search paths for user specified font. Or use user's specified path.
-            let vulf = ab_glyph::FontArc::try_from_slice(include_bytes!("../Monocraft.otf")).unwrap();
+            // /home/david/.local/share/fonts/Vulf_Mono-Light_Italic_web.ttf
+            /// ../Monocraft.otf
+            let vulf = ab_glyph::FontArc::try_from_slice(include_bytes!("/home/david/.local/share/fonts/Vulf_Mono-Light_Italic_web.ttf")).unwrap();
             let mut glyph_brush = GlyphBrushBuilder::using_font(vulf).build(&device, wgpu::TextureFormat::Bgra8UnormSrgb);
             let staging_belt = wgpu::util::StagingBelt::new(1024);
             let font_scale = 16.0;
@@ -150,7 +169,10 @@ impl State {
             let rectangles = vec![];
             // create a bunch of rectangles
 
-            let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, rect_pipeline, rectangles, font_scale,file_name,cursors : vec![], scroll : 0.0 , lines};
+            let top_margin = TopMargin::new(&device, (size.width,size.height), file_name.clone());
+            
+
+            let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, rect_pipeline, rectangles, font_scale,file_name,cursors : vec![], scroll : 0.0 , lines, top_margin };
 
             let cursor : cursor::Cursor = cursor::Cursor::new(&state, (0,0));
             state.cursors.push(cursor);
@@ -228,6 +250,8 @@ impl State {
             for rect in &mut self.rectangles{
                 rect.update_rect(&self.device, (new_size.width,new_size.height));
             }
+
+            self.top_margin.rect.update_rect(&self.device, (new_size.width,new_size.height));
         }
 	}
 
@@ -293,6 +317,7 @@ impl State {
         // create the command buffer
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder") } );
 
+        let top_margin_offset = self.top_margin.rect.px_size.1 as i64;
          // draw cursor
         { // to cause _render_pass to be destroyed before self.queue.submit().
             // create a render pass out of the encoder
@@ -309,13 +334,16 @@ impl State {
 
             render_pass.set_pipeline(&self.rect_pipeline.pipeline);
             // self.draw(&mut render_pass);
-            for cursor in &self.cursors {
+            for cursor in &mut self.cursors {
+                cursor.rect.set_offset(&self.device, (0,top_margin_offset));
                 cursor.rect.draw(&mut render_pass);
             }
             
             for rect in &self.rectangles {
                 rect.draw(&mut render_pass);
             }
+
+            self.top_margin.rect.draw(&mut render_pass);
         }
 
         // ------------- Draw text ------------------
@@ -326,7 +354,7 @@ impl State {
             
             let break_num = &self.lines[i].breaks.len();
             for wrap in 0..break_num-1 {
-                let pos = (0.0, (y_acc * self.font_scale as i64 - offset) as f32);
+                let pos = (0.0, (y_acc * self.font_scale as i64 - offset + top_margin_offset) as f32);
                 
                 let text_color = rgb(220, 215, 201);
                 //eww
@@ -344,6 +372,20 @@ impl State {
             }
 
         }
+
+        { // Draw margin text===========
+            let text_color =rgb(245, 239, 230);
+            let pos = ((self.top_margin.rect.px_size.0 / 2) as f32, 2.0);
+            let text = Text::new(&self.top_margin.file_name).with_color([text_color.0,text_color.1,text_color.2,1.1]).with_scale(self.font_scale);
+            self.glyph_brush.queue(Section {
+                screen_position: pos,
+                bounds: (self.size.width as f32, self.size.height as f32),
+                text: vec![text],
+                layout: wgpu_glyph::Layout::default_single_line(),
+                
+                // ..Section::default() // line ending and v-h align
+            });
+        }//============================
 
        
         
