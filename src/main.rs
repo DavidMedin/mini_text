@@ -3,6 +3,7 @@ mod cursor;
 
 /*
 TODO: line numbers
+TODO: handle empty files
  */
 
 use std::{io::{BufRead, Write}};
@@ -12,7 +13,7 @@ use wgpu_glyph::{*,ab_glyph::{self, Font, FontArc}, GlyphBrushBuilder, GlyphBrus
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
-    window::{WindowBuilder,Window}, dpi::PhysicalPosition, platform::unix::x11::util::Geometry,
+    window::{WindowBuilder,Window}, dpi::PhysicalPosition,
 };
 
 // Don't use this will textures! Probably not a problem, but textures are
@@ -21,6 +22,13 @@ fn rgb(r:u32,g:u32,b:u32) -> (f32,f32,f32) {
     // approximated color correction formula
     // (rgb_color / 255) ^ 2.2
     ((r as f32/255.0).powf(2.2),(g as f32/255.0).powf(2.2),(b as f32/255.0).powf(2.2))
+}
+
+
+pub struct Line {
+    text : String,
+    breaks : Vec<usize>,
+    glyphs : Vec<Vec<SectionGlyph>>
 }
 
 // The graphical state of the window.
@@ -37,8 +45,9 @@ pub struct State {
 
     file_name : String,
     // text : Vec< String >,
-    text : Vec< (String,Vec<usize>) >, // List of pairs of strings, and their list of line breaks.
-    glyphs : Vec<Vec<Vec<SectionGlyph>>>, // One for lines, one for wrapped lines, one for a line.
+    // text : Vec< (String,Vec<usize>) >, // List of pairs of strings, and their list of line breaks.
+    // glyphs : Vec<Vec<Vec<SectionGlyph>>>, // One for lines, one for wrapped lines, one for a line.
+    lines : Vec<Line>,
     font_scale : f32,
 
     cursors : Vec<Cursor>,
@@ -127,6 +136,8 @@ impl State {
                 glyphs.push(line_glyphs);
                 text.push( (line,breaks) );
             }
+            // zip text and glyphs into a vec of lines.
+            let lines : Vec<Line> = text.into_iter().zip(glyphs.into_iter()).map(|(t,g)| Line{ text: t.0, breaks: t.1, glyphs: g }).collect();
 
             let rect_pipeline = rect::RectPipeline::new(&device, config.format);
 
@@ -134,7 +145,7 @@ impl State {
             let rectangles = vec![];
             // create a bunch of rectangles
 
-            let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, text, rect_pipeline, rectangles, font_scale,file_name,cursors : vec![], scroll : 0.0 , glyphs};
+            let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, rect_pipeline, rectangles, font_scale,file_name,cursors : vec![], scroll : 0.0 , lines};
 
             let cursor : cursor::Cursor = cursor::Cursor::new(&state, (0,0));
             state.cursors.push(cursor);
@@ -230,10 +241,10 @@ impl State {
 
         // erase file, and write to it.
         let mut i : usize = 0;
-        let len = self.text.len();
-        for line in &self.text {
+        let len = self.lines.len();
+        for Line{text,..} in &self.lines {
             // TODO: handle these
-            file.write(line.0.as_bytes());
+            file.write(text.as_bytes());
             i+=1;
             if i != len {
                 file.write(&['\n' as u8]);
@@ -251,17 +262,17 @@ impl State {
     fn move_cursor(&mut self, direction : CursorMovement) {
         use CursorMovement::*;
         for cursor in &mut self.cursors {
-            let refs : Vec<&String> = self.text.iter().map(|x| &x.0).collect();
+            let refs : Vec<&String> = self.lines.iter().map(|x| &x.text).collect();
             cursor.move_cursor(&refs, direction);
-            cursor.update_cursor(&self.device, &self.glyph_brush, self.scroll as i64 * self.font_scale as i64, &self.glyphs);
+            cursor.update_cursor(&self.device, &self.glyph_brush, self.scroll as i64 * self.font_scale as i64, &self.lines);
         }
         
     }
     fn insert_cursor(&mut self, character : char) {
         // the cursor is an index. backspace removes the character before the cursor.
         for cursor in &mut self.cursors {
-            cursor.insert_text(&self.glyph_brush,&mut self.text, &mut self.glyphs, character);
-            cursor.update_cursor(&self.device, &self.glyph_brush, self.scroll as i64  * self.font_scale as i64, &self.glyphs);
+            cursor.insert_text(&self.glyph_brush,&mut self.lines, character);
+            cursor.update_cursor(&self.device, &self.glyph_brush, self.scroll as i64  * self.font_scale as i64, &self.lines);
         }
     }
 
@@ -302,13 +313,15 @@ impl State {
         // queue text draw
         let mut y_acc = 0; // y position in lines.
         let offset = self.scroll as i64 * self.font_scale as i64;
-        for i in 0..self.text.len() {
+        for i in 0..self.lines.len() {
             
-            for wrap in 0..&self.text[i].1.len()-1 {
+            let break_num = &self.lines[i].breaks.len();
+            for wrap in 0..break_num-1 {
                 let pos = (0.0, (y_acc * self.font_scale as i64 - offset) as f32);
                 
                 let text_color = rgb(220, 215, 201);
-                let text = Text::new(&self.text[i].0[self.text[i].1[wrap] .. self.text[i].1[wrap+1]]).with_color([text_color.0,text_color.1,text_color.2,1.1]).with_scale(self.font_scale);
+                //eww
+                let text = Text::new(&self.lines[i].text[self.lines[i].breaks[wrap] .. self.lines[i].breaks[wrap+1]]).with_color([text_color.0,text_color.1,text_color.2,1.1]).with_scale(self.font_scale);
                 self.glyph_brush.queue(Section {
                     screen_position: pos,
                     bounds: (self.size.width as f32, self.size.height as f32),
@@ -456,7 +469,7 @@ pub async fn run() {
                             for cursor in &mut state.cursors {
                                 // TODO: Remove offset from the Cursor struct.
                                 // cursor.rect.set_offset(&state.device, (0,(state.scroll as f32 * state.font_scale) as i64));
-                                cursor.update_cursor(&state.device,&state.glyph_brush, state.scroll as i64 * state.font_scale as i64, &state.glyphs);
+                                cursor.update_cursor(&state.device,&state.glyph_brush, state.scroll as i64 * state.font_scale as i64, &state.lines);
                             }
                             println!("Scrolling lines ({},{})",x,y);
                         },
@@ -464,7 +477,7 @@ pub async fn run() {
                             // mouse pad scrolling
                             state.scroll += *y as f64;
                             for cursor in &mut state.cursors{
-                                cursor.update_cursor(&state.device,&state.glyph_brush, state.scroll as i64 * state.font_scale as i64, &state.glyphs);
+                                cursor.update_cursor(&state.device,&state.glyph_brush, state.scroll as i64 * state.font_scale as i64, &state.lines);
                             }
                             println!("Scrolling pixels ({},{})",x,y);
                         },

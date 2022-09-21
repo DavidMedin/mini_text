@@ -1,6 +1,7 @@
 use crate::State;
 
 use super::rect;
+use super::Line;
 use wgpu::Device;
 use wgpu_glyph::{Text,GlyphBrush,SectionGeometry, GlyphPositioner,SectionGlyph, ab_glyph::{Font, FontArc}};
 pub struct Cursor {
@@ -20,23 +21,23 @@ impl Cursor {
         let mut cursor = Cursor { pos, rect, font_size: state.font_scale, screen_size};
 
 
-        let cursor_pos = cursor.calc_cursor_pos(&state.glyph_brush,  &state.glyphs[pos.1])
+        let cursor_pos = cursor.calc_cursor_pos(&state.glyph_brush,  &state.lines[pos.1])
         .expect("0,0 should be a valid cursor location, all the time.");
 
         // update the new cursor
         // cursor.rect.set_pos(&state.device, x, y) = ( as usize, cursor_pos.1 as usize);
-        cursor.update_cursor(&state.device, &state.glyph_brush,state.scroll as i64 * state.font_scale as i64, &state.glyphs);
+        cursor.update_cursor(&state.device, &state.glyph_brush,state.scroll as i64 * state.font_scale as i64, &state.lines);
         cursor
     }
 
-    fn calc_cursor_pos(&self, glyph_brush : &GlyphBrush<()>, text : &Vec<Vec<SectionGlyph>>) -> Option<(i64,i64,u32)> {
+    fn calc_cursor_pos(&self, glyph_brush : &GlyphBrush<()>, text : &Line) -> Option<(i64,i64,u32)> {
         let font = &glyph_brush.fonts()[0];
 
         // let mut text_acc = 0;
         let mut x = 0;
         let mut y = 0;
         let mut last_x_px : i64 = 0;
-        for line in text {
+        for line in &text.glyphs {
             last_x_px = 0;
             for SectionGlyph{glyph,..} in line {
                 // Get the width of the glyph
@@ -71,11 +72,11 @@ impl Cursor {
     }
 
     // scaled_scroll is a scroll of pixels.
-    pub fn update_cursor(&mut self,device : &Device , glyph_brush : &GlyphBrush<()>,scaled_scroll : i64, text : &/*All lines*/Vec< /*line break*/Vec< /*line*/Vec<SectionGlyph>>>) {
+    pub fn update_cursor(&mut self,device : &Device , glyph_brush : &GlyphBrush<()>,scaled_scroll : i64, text : &Vec<Line>) {
         // get number of lines proceeding.
         let mut y_acc = 0;
         for i in 0..self.pos.1 { // doesn't include self.pos.1
-            y_acc += text[i].len() as i64;
+            y_acc += text[i].glyphs.len() as i64;
         }
         // update cursor rectangle position.        
         let (x,y,w) = self.calc_cursor_pos(glyph_brush, &text[self.pos.1])
@@ -141,35 +142,34 @@ impl Cursor {
         }
         None
     }
-    pub fn insert_text(&mut self,glyph_brush : &GlyphBrush<()>, text : &mut Vec<(String, Vec<usize>)>, glyphs : &mut Vec<Vec<Vec<SectionGlyph>>>, character : char) {
+    pub fn insert_text(&mut self,glyph_brush : &GlyphBrush<()>, lines : &mut Vec<Line>, character : char) {
+        let Line { text, breaks, glyphs } = &mut lines[self.pos.1];
         match character {
             '\r' => {
                 // TODO: catch these out of bounds errors, report, and do nothing in the future.
-                // let wrap_line = text[self.pos.1].0[]
-                let string : String = text[self.pos.1].0.drain(self.pos.0..).collect();
+                let string : String = text.drain(self.pos.0..).collect();
                 // update the 'drained' string.
-                let line_glyphs = State::batch_read_string(glyph_brush, self.font_size, self.screen_size, &text[self.pos.1].0);
-                text[self.pos.1].1 = State::wrap_line(&line_glyphs,&text[self.pos.1].0); // update line break indices.
+                *glyphs = State::batch_read_string(glyph_brush, self.font_size, self.screen_size, text);
+                *breaks = State::wrap_line(glyphs,text); // update line break indices.
 
                 // calculate the new line's line breaks.
                 let line_glyphs = State::batch_read_string(glyph_brush, self.font_size, self.screen_size, &string);
-                let breaks = State::wrap_line(&line_glyphs,&string);
-                text.insert(self.pos.1+1, (string,breaks));
-                glyphs.insert(self.pos.1+1, line_glyphs);
+                let new_breaks = State::wrap_line(&line_glyphs,&string);
+                let new_line = Line{ text: string, breaks : new_breaks, glyphs: line_glyphs };
+                lines.insert(self.pos.1+1, new_line);
                 self.pos.1 += 1;
                 self.pos.0 = 0;
             },
             '\u{8}' => { // backspace
                 let mut update_line = self.pos.1;
                 if self.pos.0 > 0 {
-                    text[self.pos.1].0.remove(if self.pos.0 == 0 {self.pos.0} else {self.pos.0-1} );
+                    text.remove(if self.pos.0 == 0 {self.pos.0} else {self.pos.0-1} );
                     self.pos.0 -= 1;
                 } else if self.pos.1 > 0 {
                     // Copy the remaining text from this line and copy to the last line.
-                    let (string,_) = text.remove(self.pos.1);
-                    // let string : String = text[self.pos.1].drain(..).collect();
-                    let len = text[self.pos.1-1].0.len();
-                    text[self.pos.1-1].0.insert_str( len, string.as_str());
+                    let Line{ text, .. } = lines.remove(self.pos.1);
+                    let len = text.len();
+                    lines[self.pos.1-1].text.insert_str( len, text.as_str());
                     self.pos.0 = len;
                     
                     // text.remove(self.pos.1);
@@ -178,19 +178,20 @@ impl Cursor {
                     update_line = self.pos.1-1;
                 }
                 // update
-                let line_glyphs = State::batch_read_string(glyph_brush, self.font_size, self.screen_size, &text[update_line].0);
-                text[update_line].1 = State::wrap_line(&line_glyphs,&text[update_line].0); // update line break indices.
-                glyphs[update_line] = line_glyphs;
+                let line_glyphs = State::batch_read_string(glyph_brush, self.font_size, self.screen_size, &lines[update_line].text);
+                lines[update_line].breaks = State::wrap_line(&line_glyphs,&lines[update_line].text); // update line break indices.
+
+                // glyphs[update_line] = line_glyphs;
             }
             '\t' => {
 
             }
             character if character.is_control() == false => {
-                text[self.pos.1].0.insert(self.pos.0,character);
+                text.insert(self.pos.0,character);
                 // TODO: be smarter, don't totally recalcuate everything all the time.
-                let line_glyphs = State::batch_read_string(glyph_brush, self.font_size, self.screen_size, &text[self.pos.1].0);
-                text[self.pos.1].1 = State::wrap_line(&line_glyphs,&text[self.pos.1].0); // update line break indices.
-                glyphs[self.pos.1] = line_glyphs;
+                let line_glyphs = State::batch_read_string(glyph_brush, self.font_size, self.screen_size, text);
+                *breaks = State::wrap_line(&line_glyphs,text); // update line break indices.
+                *glyphs = line_glyphs;
                 
                 self.pos.0 += 1;
             }, // unwrap should be safe.
