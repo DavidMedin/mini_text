@@ -7,6 +7,7 @@ TODO: subscribe to file updates
 TODO: line numbers
 TODO: draw play area and margin separetly, and blit together
 TODO: fun timing and color things. like a fading cursor.
+TODO: Copy and Paste
 TODO: Alt - drag for windows (shift for window resize)
 TODO: dbus magic
  */
@@ -56,9 +57,17 @@ impl TopMargin {
     pub fn new(device : &Device, screen_size : (u32,u32), file_name :String) -> Self {
         let margin_height = 20;
         let margin_rect = rect::Rect::new(device,screen_size,(screen_size.0,margin_height), (0,0), (0,0), rgb(120, 149, 178));
-        let left_icon = rect::Rect::new(device, screen_size,(10,10), (2,2), (0,0), rgb(255, 148, 148));
+        let left_icon = rect::Rect::new(device, screen_size,(16,16), (2,2), (0,0), rgb(195, 255, 153));
         TopMargin { rect: margin_rect, left_icon, file_name: file_name }
     }
+
+    pub fn draw<'a>(&'a mut self,device : &wgpu::Device, render_pass : & mut wgpu::RenderPass<'a>, modified : bool) {
+        let color : (f32,f32,f32) = if modified == true { rgb(246, 90, 131) } else { rgb(195, 255, 153) };
+        self.left_icon.set_color(device, color);
+        self.rect.draw(render_pass);
+        self.left_icon.draw(render_pass);
+    }
+
 }
 
 // The graphical state of the window.
@@ -81,6 +90,7 @@ pub struct State {
     rectangles: Vec<rect::Rect>,
 
     top_margin : TopMargin,
+    modified : bool, // Has the document been modified?
 
     scroll : f64
 }
@@ -131,7 +141,7 @@ impl State {
             // TODO: Search paths for user specified font. Or use user's specified path.
             // /home/david/.local/share/fonts/Vulf_Mono-Light_Italic_web.ttf
             // ../Monocraft.otf
-            let vulf = ab_glyph::FontArc::try_from_slice(include_bytes!("/home/david/.local/share/fonts/Vulf_Mono-Light_Italic_web.ttf")).unwrap();
+            let vulf = ab_glyph::FontArc::try_from_slice(include_bytes!("../Monocraft.otf")).unwrap();
             let glyph_brush = GlyphBrushBuilder::using_font(vulf).build(&device, wgpu::TextureFormat::Bgra8UnormSrgb);
             let staging_belt = wgpu::util::StagingBelt::new(1024);
             let font_scale = 16.0;
@@ -184,7 +194,7 @@ impl State {
             let top_margin = TopMargin::new(&device, (size.width,size.height), file_name.clone());
             
 
-            let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, rect_pipeline, rectangles, font_scale,file_name,cursors : vec![], scroll : 0.0 , lines, top_margin };
+            let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, rect_pipeline, rectangles, font_scale,file_name,cursors : vec![], scroll : 0.0 , lines, top_margin, modified:false };
 
             let cursor : cursor::Cursor = cursor::Cursor::new(&state, (0,0));
             state.cursors.push(cursor);
@@ -295,6 +305,7 @@ impl State {
                 file.write(&['\n' as u8]);
             }
         }
+        self.modified = false;
     }
 	fn input(&mut self, event : &WindowEvent) -> bool {
         false
@@ -305,7 +316,6 @@ impl State {
     }
 
     fn move_cursor(&mut self, direction : CursorMovement) {
-        use CursorMovement::*;
         for cursor in &mut self.cursors {
             let refs : Vec<&String> = self.lines.iter().map(|x| &x.text).collect();
             cursor.move_cursor(&refs, direction);
@@ -315,6 +325,7 @@ impl State {
     }
     fn insert_cursor(&mut self, character : char) {
         // the cursor is an index. backspace removes the character before the cursor.
+        self.modified = true;
         for cursor in &mut self.cursors {
             cursor.insert_text(&self.glyph_brush,&mut self.lines, character);
             cursor.update_cursor(&self.device, &self.glyph_brush, self.scroll as i64  * self.font_scale as i64, &self.lines);
@@ -355,7 +366,9 @@ impl State {
                 rect.draw(&mut render_pass);
             }
 
-            self.top_margin.rect.draw(&mut render_pass);
+            // self.top_margin.rect.draw(&mut render_pass);
+            // self.top_margin.left_icon.draw(&mut render_pass);
+            self.top_margin.draw(&self.device,&mut render_pass,self.modified);
         }
 
         // ------------- Draw text ------------------

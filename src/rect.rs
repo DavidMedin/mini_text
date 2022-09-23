@@ -1,5 +1,7 @@
 use wgpu::{include_wgsl, util::DeviceExt};
 
+// TODO: allow rect to be positioned by center.
+
 pub struct RectPipeline {
     pub pipeline : wgpu::RenderPipeline
 }
@@ -143,7 +145,7 @@ impl Rect {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        Rect{ vertices : *vertices, size : (width,height), pos: (x,y), vertex_buffer, screen_size : size, color , px_pos, px_size, offset }
+        Rect{ vertices : *vertices, size : (width,height), pos: (x,y), vertex_buffer, screen_size , color , px_pos, px_size, offset }
     }
 
     pub fn draw<'a>(&'a self,render_pass : & mut wgpu::RenderPass<'a>) {
@@ -236,5 +238,10 @@ impl Rect {
     pub fn set_offset(&mut self, device : &wgpu::Device, offset : (i64,i64)) {
         self.offset = offset;
         self.set_pos(device, (self.px_pos.0,self.px_pos.1), offset);
+    }
+
+    pub fn set_color(&mut self, device : &wgpu::Device, color : (f32,f32,f32)) {
+        self.color = color;
+        self.update_rect(device,self.screen_size);
     }
 }
