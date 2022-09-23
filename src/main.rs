@@ -2,12 +2,13 @@ mod rect;
 mod cursor;
 
 /*
-TODO: line numbers
-TODO: handle empty files
 TODO: Status line (saved ... file name ... [x] button)
+TODO: subscribe to file updates
+TODO: line numbers
 TODO: draw play area and margin separetly, and blit together
 TODO: fun timing and color things. like a fading cursor.
 TODO: Alt - drag for windows (shift for window resize)
+TODO: dbus magic
  */
 
 use std::{io::{BufRead, Write}};
@@ -129,33 +130,44 @@ impl State {
 
             // TODO: Search paths for user specified font. Or use user's specified path.
             // /home/david/.local/share/fonts/Vulf_Mono-Light_Italic_web.ttf
-            /// ../Monocraft.otf
+            // ../Monocraft.otf
             let vulf = ab_glyph::FontArc::try_from_slice(include_bytes!("/home/david/.local/share/fonts/Vulf_Mono-Light_Italic_web.ttf")).unwrap();
-            let mut glyph_brush = GlyphBrushBuilder::using_font(vulf).build(&device, wgpu::TextureFormat::Bgra8UnormSrgb);
+            let glyph_brush = GlyphBrushBuilder::using_font(vulf).build(&device, wgpu::TextureFormat::Bgra8UnormSrgb);
             let staging_belt = wgpu::util::StagingBelt::new(1024);
             let font_scale = 16.0;
 
-
-            let mut file_lines : Vec<String> = {// open the file
+            let file_lines : Vec<String> = {// open the file ---------------------------------|
                 let path = std::path::Path::new(&file_name);
-                let mut file = match std::fs::File::open(path){
-                    Ok(file) => file,
-                    Err(e) => {
-                        todo!();//TODO: create a file.
-                    },
-                };
                 
-                let mut text : Vec<String> = vec![];
-                let mut reader = std::io::BufReader::new(file);
-                for line in reader.lines() { // from_utf8_lossy for binary files. Want differnt mode!
-                    // if the file contains bad text, dump the text so far, report error, and break.
-                    let line = if let Ok(line) = line {line} else {text = vec![]; println!("Failed to read file : contains invalid utf-8!"); break;};
-                    
-                    // copy the file into text.
-                    text.push(line);
+                match std::fs::OpenOptions::new().read(true).open(path){
+                    Ok(file) => {
+                        let mut text : Vec<String> = vec![];
+                        let reader = std::io::BufReader::new(file);
+                        for line in reader.lines() { // from_utf8_lossy for binary files. Want differnt mode!
+                            // if the file contains bad text, dump the text so far, report error, and break.
+                            let line = if let Ok(line) = line {line} else {text = vec![]; println!("Failed to read file : contains invalid utf-8!"); break;};
+                            
+                            // copy the file into text.
+                            text.push(line);
+                        }
+
+                        if text.len() == 0 { // If the file is emtpy, add an empty line
+                            text.push(String::new())
+                        }
+                        
+                        // close the file by dropping the File object.
+                        text // Return to file_lines <---------------------------------------------|
+                    },
+                    Err(e ) => {
+                        // todo!();//TODO: Handle some of the errors from e
+                        if let std::io::ErrorKind::NotFound = e.kind() {
+                            vec![String::new()]
+                        } else {
+                            panic!("Error opening file! : {}",e);
+                        }
+                    },
                 }
-                // close the file by dropping the File object.
-                text
+                
             };
 
             let mut lines : Vec<Line> = vec![];
@@ -261,7 +273,7 @@ impl State {
         let path = std::path::Path::new(&self.file_name);
         println!("Opening {:?}",path);
         //  Like Open("file", 'w') in C, I think.
-        let mut file = match std::fs::OpenOptions::new().write(true).truncate(true).open(path) {
+        let mut file = match std::fs::OpenOptions::new().write(true).truncate(true).create(true).open(path) {
             // let mut file = match std::fs::OpenOptions::new().truncate(true).open(path) {
             Ok(file) => file,
             Err(e) => {

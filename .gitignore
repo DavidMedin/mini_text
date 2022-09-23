@@ -3,3 +3,4 @@
 *.lock
 .vscode
 .idea
+*.txt
