@@ -184,7 +184,8 @@ impl Rect {
         });
     }
 
-    pub fn set_rect(&mut self,device : & wgpu::Device, x:i64,y:i64,w:u32,h:u32) {
+    pub fn set_rect(&mut self,device : & wgpu::Device,screen_size : (u32,u32), x:i64,y:i64,w:u32,h:u32) {
+        self.screen_size = screen_size;
         self.px_pos = (x,y);
         self.px_size = (w,h);
         let (x,y,w,h) = world_space(self.screen_size, x + self.offset.0, y + self.offset.1, w, h);

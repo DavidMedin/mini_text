@@ -3,6 +3,7 @@ mod cursor;
 mod button;
 
 /*
+TODO: Fix weird text cut-off when window is really small.
 TODO: subscribe to file updates
 TODO: line numbers
 TODO: draw play area and margin separetly, and blit together
@@ -72,7 +73,7 @@ impl TopMargin {
     fn get_section<'a>(&'a self,font_size : f32) -> Section<'a> {
         let layout = Layout::default_single_line();
         let text_color =rgb(245, 239, 230);
-        let pos = ((self.rect.px_size.0 / 2 - self.name_width / 2) as f32, 2.0);
+        let pos = ((self.rect.px_size.0 as i64 / 2 - self.name_width as i64 / 2) as f32, 2.0);
         let text = Text::new(&self.file_name).with_color([text_color.0,text_color.1,text_color.2,1.1]).with_scale(font_size);
 
         Section {
@@ -91,6 +92,13 @@ impl TopMargin {
         self.exit_button.draw(render_pass);
 
         glyph_brush.queue(self.get_section(font_size));
+    }
+
+    fn update(&mut self,device :&Device, screen_size : (u32,u32)) {
+        self.rect.set_rect(device, screen_size,0, 0, screen_size.0, 20);
+        self.exit_button.rect.set_rect(device, screen_size, screen_size.0 as i64-20, 2, 16,16);
+        self.left_icon.update_rect(device, screen_size);
+        self.exit_button.update(device,screen_size);
     }
 
 }
@@ -312,7 +320,8 @@ impl State {
                 rect.update_rect(&self.device, (new_size.width,new_size.height));
             }
 
-            self.top_margin.rect.update_rect(&self.device, (new_size.width,new_size.height));
+            // self.top_margin.rect.update_rect(&self.device, (new_size.width,new_size.height));
+            self.top_margin.update(&self.device,(new_size.width,new_size.height));
         }
 	}
 

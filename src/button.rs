@@ -42,7 +42,7 @@ impl ButtonBuilder {
 }
 
 pub struct Button {
-    rect : Rect,
+    pub rect : Rect,
     content : BtnContent 
 }
 
@@ -60,5 +60,9 @@ impl Button {
     // I don't understand lifetimes
     pub fn draw<'a>(&'a self,render_pass : &mut wgpu::RenderPass<'a>) {
         self.rect.draw(render_pass);
+    }
+
+    pub fn update(&mut self, device : &wgpu::Device, screen_size:(u32,u32)) {
+        self.rect.update_rect(device, screen_size);
     }
 }

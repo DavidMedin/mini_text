@@ -81,7 +81,7 @@ impl Cursor {
         // update cursor rectangle position.        
         let (x,y,w) = self.calc_cursor_pos(glyph_brush, &text[self.pos.1])
             .expect("You are bad at programming.");
-        self.rect.set_rect(device,x,y + y_acc * (self.font_size as i64) - scaled_scroll, w,self.font_size as u32);
+        self.rect.set_rect(device,self.screen_size,x,y + y_acc * (self.font_size as i64) - scaled_scroll, w,self.font_size as u32);
     }
 
     // Does not update the cursor's rectangle.
