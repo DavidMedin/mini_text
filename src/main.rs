@@ -48,33 +48,65 @@ impl Line {
     }
 }
 
-// TODO: Center file_name text
 struct TopMargin {
     rect : rect::Rect,
     left_icon : rect::Rect,
     file_name : String,
+    name_width : u32,
     exit_button : button::Button
 }
 impl TopMargin {
-    pub fn new(device : &Device, screen_size : (u32,u32), file_name :String) -> Self {
+    fn new(device : &Device, glyph_brush : &GlyphBrush<()>, screen_size : (u32,u32), file_name :String, font_size : f32) -> Self {
         let margin_height = 20;
         let margin_rect = rect::Rect::new(device,screen_size,(screen_size.0,margin_height), (0,0), (0,0), rgb(120, 149, 178));
         let left_icon = rect::Rect::new(device, screen_size,(16,16), (2,2), (0,0), rgb(195, 255, 153));
 
         let exit_button = button::ButtonBuilder::new(screen_size).size((16,16)).pos((screen_size.0 as i64-20, 2))
             .color(rgb(246, 90, 131)).build(device);
+
+        let name_width = get_text_width(glyph_brush,&file_name, font_size,screen_size);
         
-        TopMargin { rect: margin_rect, left_icon, file_name: file_name,exit_button }
+        TopMargin { rect: margin_rect, left_icon, file_name: file_name,exit_button, name_width }
     }
 
-    pub fn draw<'a>(&'a mut self,device : &wgpu::Device, render_pass : & mut wgpu::RenderPass<'a>, modified : bool) {
+    fn get_section<'a>(&'a self,font_size : f32) -> Section<'a> {
+        let layout = Layout::default_single_line();
+        let text_color =rgb(245, 239, 230);
+        let pos = ((self.rect.px_size.0 / 2 - self.name_width / 2) as f32, 2.0);
+        let text = Text::new(&self.file_name).with_color([text_color.0,text_color.1,text_color.2,1.1]).with_scale(font_size);
+
+        Section {
+            screen_position: pos,
+            bounds: (self.rect.px_size.0 as f32, self.rect.px_size.1 as f32),
+            text: vec![text],
+            layout: wgpu_glyph::Layout::default_single_line(),
+        }
+    }
+
+    fn draw<'a>(&'a mut self,device : &wgpu::Device, render_pass : &mut wgpu::RenderPass<'a>, glyph_brush : &mut GlyphBrush<()>,font_size : f32, modified : bool) {
         let color : (f32,f32,f32) = if modified == true { rgb(246, 90, 131) } else { rgb(195, 255, 153) };
         self.left_icon.set_color(device, color);
         self.rect.draw(render_pass);
         self.left_icon.draw(render_pass);
         self.exit_button.draw(render_pass);
+
+        glyph_brush.queue(self.get_section(font_size));
     }
 
+}
+
+pub fn get_text_width(glyph_brush : &GlyphBrush<()>, text : &String, font_size : f32, screen_size : (u32,u32)) -> u32 {
+    let font = &glyph_brush.fonts()[0]; // TODO: Font managing (Low priority)
+    let layout = wgpu_glyph::Layout::default_single_line();
+    
+    let mut wgpu_texts = vec![ Text::new(text.as_str()).with_scale(font_size) ];
+    let sec_geom = SectionGeometry { screen_position: (0.0,0.0), bounds: (screen_size.0 as f32,screen_size.1 as f32) };
+    let mut sec_glyphs = layout.calculate_glyphs(&[font], &sec_geom , wgpu_texts.as_slice());
+
+    // TODO: add checks to resize for more text?
+    if let Some(last) = sec_glyphs.last() {
+        last.glyph.position.x as u32 + font.glyph_bounds(&last.glyph).width() as u32
+    }else { 0 }
 }
 
 // The graphical state of the window.
@@ -151,7 +183,7 @@ impl State {
             let vulf = ab_glyph::FontArc::try_from_slice(include_bytes!("../Monocraft.otf")).unwrap();
             let glyph_brush = GlyphBrushBuilder::using_font(vulf).build(&device, wgpu::TextureFormat::Bgra8UnormSrgb);
             let staging_belt = wgpu::util::StagingBelt::new(1024);
-            let font_scale = 16.0;
+            let font_size = 16.0;
 
             let file_lines : Vec<String> = {// open the file ---------------------------------|
                 let path = std::path::Path::new(&file_name);
@@ -189,7 +221,7 @@ impl State {
 
             let mut lines : Vec<Line> = vec![];
             for line in file_lines {
-                lines.push( Line::new(line,&glyph_brush, font_scale, (size.width,size.height)) );
+                lines.push( Line::new(line,&glyph_brush, font_size, (size.width,size.height)) );
             }
 
             let rect_pipeline = rect::RectPipeline::new(&device, config.format);
@@ -198,10 +230,10 @@ impl State {
             let rectangles = vec![];
             // create a bunch of rectangles
 
-            let top_margin = TopMargin::new(&device, (size.width,size.height), file_name.clone());
+            let top_margin = TopMargin::new(&device, &glyph_brush,(size.width,size.height), file_name.clone(),font_size);
             
 
-            let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, rect_pipeline, rectangles, font_scale,file_name,cursors : vec![], scroll : 0.0 , lines, top_margin, modified:false };
+            let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, rect_pipeline, rectangles, font_scale: font_size,file_name,cursors : vec![], scroll : 0.0 , lines, top_margin, modified:false };
 
             let cursor : cursor::Cursor = cursor::Cursor::new(&state, (0,0));
             state.cursors.push(cursor);
@@ -373,9 +405,7 @@ impl State {
                 rect.draw(&mut render_pass);
             }
 
-            // self.top_margin.rect.draw(&mut render_pass);
-            // self.top_margin.left_icon.draw(&mut render_pass);
-            self.top_margin.draw(&self.device,&mut render_pass,self.modified);
+            self.top_margin.draw(&self.device,&mut render_pass,&mut self.glyph_brush,self.font_scale,self.modified);
         }
 
         // ------------- Draw text ------------------
@@ -405,19 +435,7 @@ impl State {
 
         }
 
-        { // Draw margin text===========
-            let text_color =rgb(245, 239, 230);
-            let pos = ((self.top_margin.rect.px_size.0 / 2) as f32, 2.0);
-            let text = Text::new(&self.top_margin.file_name).with_color([text_color.0,text_color.1,text_color.2,1.1]).with_scale(self.font_scale);
-            self.glyph_brush.queue(Section {
-                screen_position: pos,
-                bounds: (self.size.width as f32, self.size.height as f32),
-                text: vec![text],
-                layout: wgpu_glyph::Layout::default_single_line(),
-                
-                // ..Section::default() // line ending and v-h align
-            });
-        }//============================
+        
 
        
         
