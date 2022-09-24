@@ -114,7 +114,7 @@ pub struct Rect {
     
     offset : (i64,i64), // can be negative offset
     pub px_size: (u32,u32),
-    px_pos: (i64,i64), // can be offscreen
+    pub px_pos: (i64,i64), // can be offscreen
     
     color : (f32,f32,f32),
     screen_size : (u32,u32),

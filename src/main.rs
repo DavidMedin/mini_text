@@ -1,8 +1,8 @@
 mod rect;
 mod cursor;
+mod button;
 
 /*
-TODO: Status line (saved ... file name ... [x] button)
 TODO: subscribe to file updates
 TODO: line numbers
 TODO: draw play area and margin separetly, and blit together
@@ -14,7 +14,7 @@ TODO: dbus magic
 
 use std::{io::{BufRead, Write}};
 use cursor::Cursor;
-use wgpu::{util::StagingBelt, Device};
+use wgpu::{util::StagingBelt, Device, RenderPass};
 use wgpu_glyph::{*,ab_glyph::{self, Font, FontArc}, GlyphBrushBuilder, GlyphBrush, Section, Text, GlyphPositioner, SectionGeometry};
 use winit::{
     event::*,
@@ -48,17 +48,23 @@ impl Line {
     }
 }
 
+// TODO: Center file_name text
 struct TopMargin {
     rect : rect::Rect,
     left_icon : rect::Rect,
     file_name : String,
+    exit_button : button::Button
 }
 impl TopMargin {
     pub fn new(device : &Device, screen_size : (u32,u32), file_name :String) -> Self {
         let margin_height = 20;
         let margin_rect = rect::Rect::new(device,screen_size,(screen_size.0,margin_height), (0,0), (0,0), rgb(120, 149, 178));
         let left_icon = rect::Rect::new(device, screen_size,(16,16), (2,2), (0,0), rgb(195, 255, 153));
-        TopMargin { rect: margin_rect, left_icon, file_name: file_name }
+
+        let exit_button = button::ButtonBuilder::new(screen_size).size((16,16)).pos((screen_size.0 as i64-20, 2))
+            .color(rgb(246, 90, 131)).build(device);
+        
+        TopMargin { rect: margin_rect, left_icon, file_name: file_name,exit_button }
     }
 
     pub fn draw<'a>(&'a mut self,device : &wgpu::Device, render_pass : & mut wgpu::RenderPass<'a>, modified : bool) {
@@ -66,6 +72,7 @@ impl TopMargin {
         self.left_icon.set_color(device, color);
         self.rect.draw(render_pass);
         self.left_icon.draw(render_pass);
+        self.exit_button.draw(render_pass);
     }
 
 }
@@ -444,7 +451,10 @@ pub async fn run() {
 
     let mut state = State::new(&window,file_name).await;
 
+    // unused
     let mut mod_state : ModifiersState = ModifiersState::default();
+
+    let mut cursor_pos = (0,0);    
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::RedrawRequested(window_id) if window_id == window.id() => {
@@ -530,11 +540,20 @@ pub async fn run() {
                 
 
                 // Mouse stuff -------------
-                WindowEvent::MouseInput { device_id, state, button, modifiers } => {
-                
+                WindowEvent::MouseInput { device_id, state: el_state, button, modifiers } => {
+                    if let MouseButton::Left = *button {
+                        if let ElementState::Released = *el_state {
+
+                            // Go through all buttons
+                            if state.top_margin.exit_button.does_click(cursor_pos) {
+                                control_flow.set_exit();
+                            }
+
+                        }
+                    }
                 }
                 WindowEvent::CursorMoved { device_id, position, modifiers } => {
-                    
+                    cursor_pos = (position.x as u32,position.y as u32);
                 }
                 WindowEvent::MouseWheel { device_id, delta, phase, .. }  => {
                     // scroll!
