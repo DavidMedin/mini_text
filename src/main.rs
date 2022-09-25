@@ -3,7 +3,6 @@ mod cursor;
 mod button;
 
 /*
-TODO: Fix weird text cut-off when window is really small.
 TODO: subscribe to file updates
 TODO: line numbers
 TODO: draw play area and margin separetly, and blit together
@@ -76,9 +75,12 @@ impl TopMargin {
         let pos = ((self.rect.px_size.0 as i64 / 2 - self.name_width as i64 / 2) as f32, 2.0);
         let text = Text::new(&self.file_name).with_color([text_color.0,text_color.1,text_color.2,1.1]).with_scale(font_size);
 
+        // Fixes a funny rendering bug when the screen gets too thin (width).
+        let width = if self.rect.px_size.0 > self.name_width { self.rect.px_size.0 } else { self.name_width };
+        
         Section {
             screen_position: pos,
-            bounds: (self.rect.px_size.0 as f32, self.rect.px_size.1 as f32),
+            bounds: (width as f32, self.rect.px_size.1 as f32),
             text: vec![text],
             layout: wgpu_glyph::Layout::default_single_line(),
         }
