@@ -16,7 +16,7 @@ pub struct ButtonBuilder {
 }
 impl ButtonBuilder {
     pub fn new(screen_size : (u32,u32)) -> Self {
-        ButtonBuilder { screen_size, size: (100,75), pos: (0,0), color: rgb(44, 54, 57), content: BtnContent::None}
+        ButtonBuilder { screen_size, size: (100,75), pos: (0,0), color: rgb(super::margin_bg_color), content: BtnContent::None}
     }
     pub fn size(mut self, size : (u32,u32)) -> Self {
         self.size = size;

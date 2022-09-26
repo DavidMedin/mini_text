@@ -15,7 +15,7 @@ pub struct Cursor {
 
 impl Cursor {
     pub fn new(state : &super::State, pos : (usize,usize)) -> Self {
-        let color = super::rgb(250, 148, 148);
+        let color = super::rgb(super::margin_bg_color);
         let screen_size = (state.size.width,state.size.height); // size of the screen
         let rect = rect::Rect::new(&state.device,screen_size, (1,1),(0,0), (0,0),color);
         let mut cursor = Cursor { pos, rect, font_size: state.font_scale, screen_size};
@@ -146,7 +146,10 @@ impl Cursor {
         let Line { text, breaks, glyphs } = &mut lines[self.pos.1];
         match character {
             '\r' => {
-                // TODO: catch these out of bounds errors, report, and do nothing in the future.
+                if self.pos.0 > text.len() {
+                    panic!("Cursor is too far into a line!");
+                }
+                
                 let string : String = text.drain(self.pos.0..).collect();
                 // update the 'drained' string.
                 *glyphs = State::batch_read_string(glyph_brush, self.font_size, self.screen_size, text);

@@ -22,13 +22,21 @@ use winit::{
     window::{WindowBuilder,Window}, dpi::PhysicalPosition,
 };
 
+type Color = (u32,u32,u32);
 // Don't use this will textures! Probably not a problem, but textures are
 //  stored in the sRGB format. This function is rgb -> sRGB
-fn rgb(r:u32,g:u32,b:u32) -> (f32,f32,f32) {
+fn rgb(color : Color) -> (f32,f32,f32) {
     // approximated color correction formula
     // (rgb_color / 255) ^ 2.2
-    ((r as f32/255.0).powf(2.2),(g as f32/255.0).powf(2.2),(b as f32/255.0).powf(2.2))
+    ((color.0 as f32/255.0).powf(2.2),(color.1 as f32/255.0).powf(2.2),(color.2 as f32/255.0).powf(2.2))
 }
+
+static bg_color : Color = (251, 242, 207);
+static text_color : Color = (61, 60, 66);
+static margin_bg_color : Color = (120, 149, 178);
+static save_ind_saved_color : Color = (161, 194, 152);
+static save_ind_nsaved_color : Color = (250, 112, 112);
+static exit_btn_color : Color = save_ind_nsaved_color;
 
 
 pub struct Line {
@@ -58,22 +66,23 @@ struct TopMargin {
 impl TopMargin {
     fn new(device : &Device, glyph_brush : &GlyphBrush<()>, screen_size : (u32,u32), file_name :String, font_size : f32) -> Self {
         let margin_height = 20;
-        let margin_rect = rect::Rect::new(device,screen_size,(screen_size.0,margin_height), (0,0), (0,0), rgb(120, 149, 178));
-        let left_icon = rect::Rect::new(device, screen_size,(16,16), (2,2), (0,0), rgb(195, 255, 153));
+        let margin_rect = rect::Rect::new(device,screen_size,(screen_size.0,margin_height), (0,0), (0,0), rgb(margin_bg_color));
+        let left_icon = rect::Rect::new(device, screen_size,(16,16), (2,2), (0,0), rgb(save_ind_saved_color));
 
         let exit_button = button::ButtonBuilder::new(screen_size).size((16,16)).pos((screen_size.0 as i64-20, 2))
-            .color(rgb(246, 90, 131)).build(device);
+            .color(rgb(exit_btn_color)).build(device);
 
-        let name_width = get_text_width(glyph_brush,&file_name, font_size,screen_size);
+        let name_width = get_text_width(glyph_brush,&file_name, font_size);
         
         TopMargin { rect: margin_rect, left_icon, file_name: file_name,exit_button, name_width }
     }
 
     fn get_section<'a>(&'a self,font_size : f32) -> Section<'a> {
         let layout = Layout::default_single_line();
-        let text_color =rgb(245, 239, 230);
         let pos = ((self.rect.px_size.0 as i64 / 2 - self.name_width as i64 / 2) as f32, 2.0);
-        let text = Text::new(&self.file_name).with_color([text_color.0,text_color.1,text_color.2,1.1]).with_scale(font_size);
+
+        let f_text_color = rgb(text_color);
+        let text = Text::new(&self.file_name).with_color([f_text_color.0,f_text_color.1,f_text_color.2,1.1]).with_scale(font_size);
 
         // Fixes a funny rendering bug when the screen gets too thin (width).
         let width = if self.rect.px_size.0 > self.name_width { self.rect.px_size.0 } else { self.name_width };
@@ -87,8 +96,8 @@ impl TopMargin {
     }
 
     fn draw<'a>(&'a mut self,device : &wgpu::Device, render_pass : &mut wgpu::RenderPass<'a>, glyph_brush : &mut GlyphBrush<()>,font_size : f32, modified : bool) {
-        let color : (f32,f32,f32) = if modified == true { rgb(246, 90, 131) } else { rgb(195, 255, 153) };
-        self.left_icon.set_color(device, color);
+        let color : Color = if modified == true { save_ind_nsaved_color } else { save_ind_saved_color };
+        self.left_icon.set_color(device, rgb(color));
         self.rect.draw(render_pass);
         self.left_icon.draw(render_pass);
         self.exit_button.draw(render_pass);
@@ -105,17 +114,18 @@ impl TopMargin {
 
 }
 
-pub fn get_text_width(glyph_brush : &GlyphBrush<()>, text : &String, font_size : f32, screen_size : (u32,u32)) -> u32 {
-    let font = &glyph_brush.fonts()[0]; // TODO: Font managing (Low priority)
+pub fn get_text_width(glyph_brush : &GlyphBrush<()>, text : &String, font_size : f32) -> u32 {
+    let font = &glyph_brush.fonts()[0];
     let layout = wgpu_glyph::Layout::default_single_line();
     
     let mut wgpu_texts = vec![ Text::new(text.as_str()).with_scale(font_size) ];
-    let sec_geom = SectionGeometry { screen_position: (0.0,0.0), bounds: (screen_size.0 as f32,screen_size.1 as f32) };
+    let sec_geom = SectionGeometry { screen_position: (0.0,0.0), ..Default::default() };
     let mut sec_glyphs = layout.calculate_glyphs(&[font], &sec_geom , wgpu_texts.as_slice());
 
-    // TODO: add checks to resize for more text?
+    // If the actual width of the text is bigger than unbounded (SectionGeometry default), then we have a probelm.
+
     if let Some(last) = sec_glyphs.last() {
-        last.glyph.position.x as u32 + font.glyph_bounds(&last.glyph).width() as u32
+        last.glyph.position.x as u32+ font.glyph_bounds(&last.glyph).width() as u32
     }else { 0 }
 }
 
@@ -187,7 +197,6 @@ impl State {
             };
             surface.configure(&device, &config);
 
-            // TODO: Search paths for user specified font. Or use user's specified path.
             // /home/david/.local/share/fonts/Vulf_Mono-Light_Italic_web.ttf
             // ../Monocraft.otf
             let vulf = ab_glyph::FontArc::try_from_slice(include_bytes!("../Monocraft.otf")).unwrap();
@@ -218,7 +227,7 @@ impl State {
                         text // Return to file_lines <---------------------------------------------|
                     },
                     Err(e ) => {
-                        // todo!();//TODO: Handle some of the errors from e
+                        //TODO: Handle some of the errors from e
                         if let std::io::ErrorKind::NotFound = e.kind() {
                             vec![String::new()]
                         } else {
@@ -394,7 +403,6 @@ impl State {
          // draw cursor
         { // to cause _render_pass to be destroyed before self.queue.submit().
             // create a render pass out of the encoder
-            let bg_color = rgb(63, 78, 79);
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment { // create one attachment for this render pass
@@ -429,9 +437,9 @@ impl State {
             for wrap in 0..break_num-1 {
                 let pos = (0.0, (y_acc * self.font_scale as i64 - offset + top_margin_offset) as f32);
                 
-                let text_color = rgb(220, 215, 201);
                 //eww
-                let text = Text::new(&self.lines[i].text[self.lines[i].breaks[wrap] .. self.lines[i].breaks[wrap+1]]).with_color([text_color.0,text_color.1,text_color.2,1.1]).with_scale(self.font_scale);
+                let f_text_color = rgb(text_color);
+                let text = Text::new(&self.lines[i].text[self.lines[i].breaks[wrap] .. self.lines[i].breaks[wrap+1]]).with_color([f_text_color.0,f_text_color.1,f_text_color.2,1.1]).with_scale(self.font_scale);
                 self.glyph_brush.queue(Section {
                     screen_position: pos,
                     bounds: (self.size.width as f32, self.size.height as f32),
