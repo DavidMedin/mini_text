@@ -45,7 +45,7 @@ pub struct Button {
     pub rect : Rect,
     content : BtnContent 
 }
-
+	 
 impl Button {
     pub fn does_click(&self, click_pos : (u32,u32) ) -> bool {
         if self.rect.px_pos.0 <= click_pos.0 as i64 &&

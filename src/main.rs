@@ -187,77 +187,77 @@ impl State {
             }
             , None).await.unwrap();
 
-            // will need to be regenerated for every resize of window.
-            let config = wgpu::SurfaceConfiguration{
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: surface.get_supported_formats(&adapter)[0], // Maybe CRT problem.
-                width: size.width,
-                height: size.height,
-                present_mode: wgpu::PresentMode::Fifo,
-            };
-            surface.configure(&device, &config);
+        // will need to be regenerated for every resize of window.
+        let config = wgpu::SurfaceConfiguration{
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: surface.get_supported_formats(&adapter)[0], // Maybe CRT problem.
+            width: size.width,
+            height: size.height,
+            present_mode: wgpu::PresentMode::Fifo,
+        };
+        surface.configure(&device, &config);
 
-            // /home/david/.local/share/fonts/Vulf_Mono-Light_Italic_web.ttf
-            // ../Monocraft.otf
-            let vulf = ab_glyph::FontArc::try_from_slice(include_bytes!("../Monocraft.otf")).unwrap();
-            let glyph_brush = GlyphBrushBuilder::using_font(vulf).build(&device, wgpu::TextureFormat::Bgra8UnormSrgb);
-            let staging_belt = wgpu::util::StagingBelt::new(1024);
-            let font_size = 16.0;
+        // /home/david/.local/share/fonts/Vulf_Mono-Light_Italic_web.ttf
+        // ../Monocraft.otf
+        let vulf = ab_glyph::FontArc::try_from_slice(include_bytes!("../Monocraft.otf")).unwrap();
+        let glyph_brush = GlyphBrushBuilder::using_font(vulf).build(&device, wgpu::TextureFormat::Bgra8UnormSrgb);
+        let staging_belt = wgpu::util::StagingBelt::new(1024);
+        let font_size = 16.0;
 
-            let file_lines : Vec<String> = {// open the file ---------------------------------|
-                let path = std::path::Path::new(&file_name);
-                
-                match std::fs::OpenOptions::new().read(true).open(path){
-                    Ok(file) => {
-                        let mut text : Vec<String> = vec![];
-                        let reader = std::io::BufReader::new(file);
-                        for line in reader.lines() { // from_utf8_lossy for binary files. Want differnt mode!
-                            // if the file contains bad text, dump the text so far, report error, and break.
-                            let line = if let Ok(line) = line {line} else {text = vec![]; println!("Failed to read file : contains invalid utf-8!"); break;};
-                            
-                            // copy the file into text.
-                            text.push(line);
-                        }
-
-                        if text.len() == 0 { // If the file is emtpy, add an empty line
-                            text.push(String::new())
-                        }
-                        
-                        // close the file by dropping the File object.
-                        text // Return to file_lines <---------------------------------------------|
-                    },
-                    Err(e ) => {
-                        //TODO: Handle some of the errors from e
-                        if let std::io::ErrorKind::NotFound = e.kind() {
-                            vec![String::new()]
-                        } else {
-                            panic!("Error opening file! : {}",e);
-                        }
-                    },
-                }
-                
-            };
-
-            let mut lines : Vec<Line> = vec![];
-            for line in file_lines {
-                lines.push( Line::new(line,&glyph_brush, font_size, (size.width,size.height)) );
-            }
-
-            let rect_pipeline = rect::RectPipeline::new(&device, config.format);
-
-            // let cursor : (usize,usize) = (0,0);
-            let rectangles = vec![];
-            // create a bunch of rectangles
-
-            let top_margin = TopMargin::new(&device, &glyph_brush,(size.width,size.height), file_name.clone(),font_size);
+        let file_lines : Vec<String> = {// open the file ---------------------------------|
+            let path = std::path::Path::new(&file_name);
             
+            match std::fs::OpenOptions::new().read(true).open(path){
+                Ok(file) => {
+                    let mut text : Vec<String> = vec![];
+                    let reader = std::io::BufReader::new(file);
+                    for line in reader.lines() { // from_utf8_lossy for binary files. Want differnt mode!
+                        // if the file contains bad text, dump the text so far, report error, and break.
+                        let line = if let Ok(line) = line {line} else {text = vec![]; println!("Failed to read file : contains invalid utf-8!"); break;};
+                        
+                        // copy the file into text.
+                        text.push(line);
+                    }
 
-            let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, rect_pipeline, rectangles, font_scale: font_size,file_name,cursors : vec![], scroll : 0.0 , lines, top_margin, modified:false };
+                    if text.len() == 0 { // If the file is emtpy, add an empty line
+                        text.push(String::new())
+                    }
+                    
+                    // close the file by dropping the File object.
+                    text // Return to file_lines <---------------------------------------------|
+                },
+                Err(e ) => {
+                    //TODO: Handle some of the errors from e
+                    if let std::io::ErrorKind::NotFound = e.kind() {
+                        vec![String::new()]
+                    } else {
+                        panic!("Error opening file! : {}",e);
+                    }
+                },
+            }
+            
+        };
 
-            let cursor : cursor::Cursor = cursor::Cursor::new(&state, (0,0));
-            state.cursors.push(cursor);
+        let mut lines : Vec<Line> = vec![];
+        for line in file_lines {
+            lines.push( Line::new(line,&glyph_brush, font_size, (size.width,size.height)) );
+        }
 
-            state
+        let rect_pipeline = rect::RectPipeline::new(&device, config.format);
+
+        // let cursor : (usize,usize) = (0,0);
+        let rectangles = vec![];
+        // create a bunch of rectangles
+
+        let top_margin = TopMargin::new(&device, &glyph_brush,(size.width,size.height), file_name.clone(),font_size);
+        
+
+        let mut state = Self { surface, device, queue, config, size, glyph_brush, staging_belt, rect_pipeline, rectangles, font_scale: font_size,file_name,cursors : vec![], scroll : 0.0 , lines, top_margin, modified:false };
+
+        let cursor : cursor::Cursor = cursor::Cursor::new(&state, (0,0));
+        state.cursors.push(cursor);
+
+        state
     }
 
     fn wrap_line( glyphs : &Vec<Vec<SectionGlyph>>, text : &String) -> Vec<usize> {

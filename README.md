@@ -17,3 +17,17 @@ Then, run with cargo :
 ```
 cargo run
 ```
+
+
+# Uh, but I'm on Ubuntu with Intel graphics.
+Then DRI3 is probably not enabled. This may be required to run this.
+So, go to `/etc/X11/xorg.conf.d/20-intel.conf`
+and and `Option      "DRI"    "3"`
+so it looks something like:
+```
+Section "Device"
+  Identifier "Intel Graphics"
+  Driver "intel"
+  Option "DRI" "3"
+EndSection
+```

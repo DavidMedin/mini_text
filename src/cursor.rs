@@ -171,20 +171,19 @@ impl Cursor {
                 } else if self.pos.1 > 0 {
                     // Copy the remaining text from this line and copy to the last line.
                     let Line{ text, .. } = lines.remove(self.pos.1);
-                    let len = text.len();
+                    let len = lines[self.pos.1-1].text.len();
+
                     lines[self.pos.1-1].text.insert_str( len, text.as_str());
                     self.pos.0 = len;
                     
-                    // text.remove(self.pos.1);
                     self.pos.1 -= 1;
                     
-                    update_line = self.pos.1-1;
+                    update_line = self.pos.1;
                 }
                 // update
                 let line_glyphs = State::batch_read_string(glyph_brush, self.font_size, self.screen_size, &lines[update_line].text);
                 lines[update_line].breaks = State::wrap_line(&line_glyphs,&lines[update_line].text); // update line break indices.
-
-                // glyphs[update_line] = line_glyphs;
+                lines[update_line].glyphs = line_glyphs;
             }
             '\t' => {
 
@@ -200,6 +199,5 @@ impl Cursor {
             }, // unwrap should be safe.
             _ => {}
         }
-        // self.update_cursor();
     }
 }
